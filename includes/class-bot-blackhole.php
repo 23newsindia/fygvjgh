@@ -100,6 +100,11 @@ class BotBlackhole {
             return;
         }
         
+        // Skip common static files and assets
+        if (preg_match('/\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/i', $request_uri)) {
+            return;
+        }
+        
         // Log all other traffic for monitoring
         $this->log_traffic($ip, $user_agent, $request_uri, 'Live Traffic');
     }
@@ -108,22 +113,23 @@ class BotBlackhole {
         global $wpdb;
         
         try {
-            // Check if this IP already exists in recent traffic (last hour)
+            // FIXED: Check if this IP already exists (not just in last hour)
             $existing = $wpdb->get_row($wpdb->prepare(
                 "SELECT id, hits, request_uri FROM {$this->table_name} 
                  WHERE ip_address = %s AND is_blocked = 0 
-                 AND timestamp > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-                 ORDER BY timestamp DESC LIMIT 1",
+                 ORDER BY last_seen DESC LIMIT 1",
                 $ip
             ));
             
             if ($existing) {
-                // Update hit count and add new URL to existing entry
+                // FIXED: Always increment hit count and update URLs
                 $existing_urls = explode('|', $existing->request_uri);
+                
+                // Add new URL if it's not already in the list
                 if (!in_array($request_uri, $existing_urls)) {
                     $existing_urls[] = $request_uri;
-                    // Keep only last 5 URLs to prevent database bloat
-                    $existing_urls = array_slice($existing_urls, -5);
+                    // Keep only last 10 URLs to prevent database bloat
+                    $existing_urls = array_slice($existing_urls, -10);
                     $updated_urls = implode('|', $existing_urls);
                 } else {
                     $updated_urls = $existing->request_uri;
@@ -135,10 +141,11 @@ class BotBlackhole {
                         'hits' => $existing->hits + 1, 
                         'timestamp' => current_time('mysql'),
                         'last_seen' => current_time('mysql'),
-                        'request_uri' => $updated_urls
+                        'request_uri' => $updated_urls,
+                        'user_agent' => $user_agent // Update user agent in case it changed
                     ),
                     array('id' => $existing->id),
-                    array('%d', '%s', '%s', '%s'),
+                    array('%d', '%s', '%s', '%s', '%s'),
                     array('%d')
                 );
             } else {
@@ -521,10 +528,12 @@ class BotBlackhole {
             }
         }
         
-        // Multiple consecutive requests (rate limiting) - but be more lenient
+        // IMPROVED: More intelligent rate limiting for legitimate users
         $ip = $this->get_client_ip();
         $request_count = get_transient('bot_requests_' . md5($ip));
-        if ($request_count && $request_count > 50) { // Increased from 10 to 50
+        
+        // FIXED: Much more lenient rate limiting - 100 requests per minute instead of 50
+        if ($request_count && $request_count > 100) {
             $score += 30;
         }
         

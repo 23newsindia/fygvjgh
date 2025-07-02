@@ -132,7 +132,7 @@ class BotDashboard {
             'bot-dashboard',
             plugin_dir_url(dirname(__FILE__)) . 'assets/bot-dashboard.js',
             array(), // No jQuery dependency
-            '2.0.4', // Increment version to force reload
+            '2.0.5', // Increment version to force reload
             true
         );
         
@@ -257,8 +257,8 @@ class BotDashboard {
                 $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
             }
             
-            // Get total count
-            $count_query = "SELECT COUNT(*) FROM {$this->table_name} {$where_clause}";
+            // FIXED: Get total count of unique IPs, not total entries
+            $count_query = "SELECT COUNT(DISTINCT ip_address) FROM {$this->table_name} {$where_clause}";
             if (!empty($where_params)) {
                 $total_count = $wpdb->get_var($wpdb->prepare($count_query, $where_params));
             } else {
@@ -266,9 +266,12 @@ class BotDashboard {
             }
             
             // FIXED: Get consolidated activity data - group by IP to avoid duplicates
-            $activity_query = "SELECT ip_address, user_agent, request_uri, referrer, 
+            $activity_query = "SELECT ip_address, 
+                                     MAX(user_agent) as user_agent, 
+                                     GROUP_CONCAT(DISTINCT request_uri ORDER BY timestamp DESC SEPARATOR '|') as request_uri, 
+                                     MAX(referrer) as referrer, 
                                      MAX(timestamp) as timestamp, 
-                                     MAX(first_seen) as first_seen, 
+                                     MIN(first_seen) as first_seen, 
                                      MAX(last_seen) as last_seen, 
                                      MAX(block_reason) as block_reason, 
                                      MAX(blocked_reason) as blocked_reason, 
@@ -285,9 +288,12 @@ class BotDashboard {
             if (!empty($where_params)) {
                 $activities = $wpdb->get_results($wpdb->prepare($activity_query, $query_params));
             } else {
-                $activities = $wpdb->get_results($wpdb->prepare("SELECT ip_address, user_agent, request_uri, referrer, 
+                $activities = $wpdb->get_results($wpdb->prepare("SELECT ip_address, 
+                                                                        MAX(user_agent) as user_agent, 
+                                                                        GROUP_CONCAT(DISTINCT request_uri ORDER BY timestamp DESC SEPARATOR '|') as request_uri, 
+                                                                        MAX(referrer) as referrer, 
                                                                         MAX(timestamp) as timestamp, 
-                                                                        MAX(first_seen) as first_seen, 
+                                                                        MIN(first_seen) as first_seen, 
                                                                         MAX(last_seen) as last_seen, 
                                                                         MAX(block_reason) as block_reason, 
                                                                         MAX(blocked_reason) as blocked_reason, 
@@ -318,7 +324,7 @@ class BotDashboard {
         // Count data div
         echo '<div class="bot-count-data" data-count="' . $total_count . '">';
         if ($total_count > 0) {
-            echo '<div class="bot-count">Showing ' . count($activities) . ' unique IPs of ' . $total_count . ' total activities</div>';
+            echo '<div class="bot-count">Showing ' . count($activities) . ' unique IPs of ' . $total_count . ' total unique IPs</div>';
         } else {
             echo '<div class="bot-noresults">No bot activity found</div>';
         }
@@ -389,18 +395,23 @@ class BotDashboard {
                 
                 // Handle multiple URLs separated by |
                 $urls = explode('|', $activity->request_uri);
-                $display_urls = array_slice($urls, -3); // Show last 3 URLs
+                $urls = array_unique(array_filter($urls)); // Remove duplicates and empty values
+                $display_urls = array_slice($urls, 0, 3); // Show first 3 URLs
                 
-                foreach ($display_urls as $url) {
-                    $clean_url = esc_html($url);
-                    if (strlen($clean_url) > 60) {
-                        $clean_url = substr($clean_url, 0, 60) . '...';
+                if (!empty($display_urls)) {
+                    foreach ($display_urls as $url) {
+                        $clean_url = esc_html($url);
+                        if (strlen($clean_url) > 60) {
+                            $clean_url = substr($clean_url, 0, 60) . '...';
+                        }
+                        echo '<div class="url-entry">' . $clean_url . '</div>';
                     }
-                    echo '<div class="url-entry">' . $clean_url . '</div>';
-                }
-                
-                if (count($urls) > 3) {
-                    echo '<div class="url-more">+' . (count($urls) - 3) . ' more URLs</div>';
+                    
+                    if (count($urls) > 3) {
+                        echo '<div class="url-more">+' . (count($urls) - 3) . ' more URLs</div>';
+                    }
+                } else {
+                    echo '<div class="url-entry">No URLs recorded</div>';
                 }
                 
                 echo '</div>';
