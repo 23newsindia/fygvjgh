@@ -412,6 +412,36 @@
 	word-break: break-all;
 }
 
+/* URL Entries - NEW STYLES */
+.url-entry {
+	font-size: 11px;
+	color: #666;
+	margin: 2px 0;
+	padding: 2px 4px;
+	background: rgba(0,0,0,0.05);
+	border-radius: 2px;
+	border-left: 3px solid #fcb028;
+}
+
+.url-more {
+	font-size: 10px;
+	color: #999;
+	font-style: italic;
+	margin-top: 4px;
+	text-align: center;
+	padding: 2px;
+	background: rgba(252, 176, 40, 0.1);
+	border-radius: 2px;
+}
+
+.bot-request .bot-label {
+	display: block;
+	margin-bottom: 5px;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
 /* Actions */
 .bot-actions {
 	text-align: center;
