@@ -85,12 +85,22 @@ class BotBlackhole {
         $user_agent = $this->get_user_agent();
         $request_uri = $_SERVER['REQUEST_URI'];
         
-        // Skip WooCommerce AJAX requests for logged-in users
-        if ($this->is_logged_in && strpos($request_uri, 'wc-ajax=') !== false) {
+        // FIXED: Skip WooCommerce AJAX requests completely - don't track them
+        if (strpos($request_uri, 'wc-ajax=') !== false) {
             return;
         }
         
-        // Log all traffic for monitoring
+        // Skip WordPress AJAX requests
+        if (strpos($request_uri, '/wp-admin/admin-ajax.php') !== false) {
+            return;
+        }
+        
+        // Skip other WordPress core requests
+        if ($this->is_wordpress_core_request($request_uri)) {
+            return;
+        }
+        
+        // Log all other traffic for monitoring
         $this->log_traffic($ip, $user_agent, $request_uri, 'Live Traffic');
     }
     
@@ -98,9 +108,9 @@ class BotBlackhole {
         global $wpdb;
         
         try {
-            // Check if this IP already exists in recent traffic
+            // Check if this IP already exists in recent traffic (last hour)
             $existing = $wpdb->get_row($wpdb->prepare(
-                "SELECT id, hits FROM {$this->table_name} 
+                "SELECT id, hits, request_uri FROM {$this->table_name} 
                  WHERE ip_address = %s AND is_blocked = 0 
                  AND timestamp > DATE_SUB(NOW(), INTERVAL 1 HOUR)
                  ORDER BY timestamp DESC LIMIT 1",
@@ -108,16 +118,27 @@ class BotBlackhole {
             ));
             
             if ($existing) {
-                // Update hit count for existing entry
+                // Update hit count and add new URL to existing entry
+                $existing_urls = explode('|', $existing->request_uri);
+                if (!in_array($request_uri, $existing_urls)) {
+                    $existing_urls[] = $request_uri;
+                    // Keep only last 5 URLs to prevent database bloat
+                    $existing_urls = array_slice($existing_urls, -5);
+                    $updated_urls = implode('|', $existing_urls);
+                } else {
+                    $updated_urls = $existing->request_uri;
+                }
+                
                 $wpdb->update(
                     $this->table_name,
                     array(
                         'hits' => $existing->hits + 1, 
                         'timestamp' => current_time('mysql'),
-                        'last_seen' => current_time('mysql')
+                        'last_seen' => current_time('mysql'),
+                        'request_uri' => $updated_urls
                     ),
                     array('id' => $existing->id),
-                    array('%d', '%s', '%s'),
+                    array('%d', '%s', '%s', '%s'),
                     array('%d')
                 );
             } else {
