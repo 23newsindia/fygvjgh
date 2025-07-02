@@ -132,7 +132,7 @@ class BotDashboard {
             'bot-dashboard',
             plugin_dir_url(dirname(__FILE__)) . 'assets/bot-dashboard.js',
             array(), // No jQuery dependency
-            '2.0.3', // Increment version to force reload
+            '2.0.4', // Increment version to force reload
             true
         );
         
@@ -265,14 +265,39 @@ class BotDashboard {
                 $total_count = $wpdb->get_var($count_query);
             }
             
-            // Get activity data
-            $activity_query = "SELECT * FROM {$this->table_name} {$where_clause} ORDER BY {$sort} {$order} LIMIT %d OFFSET %d";
+            // FIXED: Get consolidated activity data - group by IP to avoid duplicates
+            $activity_query = "SELECT ip_address, user_agent, request_uri, referrer, 
+                                     MAX(timestamp) as timestamp, 
+                                     MAX(first_seen) as first_seen, 
+                                     MAX(last_seen) as last_seen, 
+                                     MAX(block_reason) as block_reason, 
+                                     MAX(blocked_reason) as blocked_reason, 
+                                     SUM(hits) as hits, 
+                                     MAX(is_blocked) as is_blocked,
+                                     MAX(id) as id
+                              FROM {$this->table_name} {$where_clause} 
+                              GROUP BY ip_address 
+                              ORDER BY {$sort} {$order} 
+                              LIMIT %d OFFSET %d";
+            
             $query_params = array_merge($where_params, array($limit, $offset));
             
             if (!empty($where_params)) {
                 $activities = $wpdb->get_results($wpdb->prepare($activity_query, $query_params));
             } else {
-                $activities = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$this->table_name} ORDER BY {$sort} {$order} LIMIT %d OFFSET %d", $limit, $offset));
+                $activities = $wpdb->get_results($wpdb->prepare("SELECT ip_address, user_agent, request_uri, referrer, 
+                                                                        MAX(timestamp) as timestamp, 
+                                                                        MAX(first_seen) as first_seen, 
+                                                                        MAX(last_seen) as last_seen, 
+                                                                        MAX(block_reason) as block_reason, 
+                                                                        MAX(blocked_reason) as blocked_reason, 
+                                                                        SUM(hits) as hits, 
+                                                                        MAX(is_blocked) as is_blocked,
+                                                                        MAX(id) as id
+                                                                 FROM {$this->table_name} 
+                                                                 GROUP BY ip_address 
+                                                                 ORDER BY {$sort} {$order} 
+                                                                 LIMIT %d OFFSET %d", $limit, $offset));
             }
             
             // Generate HTML response
@@ -293,7 +318,7 @@ class BotDashboard {
         // Count data div
         echo '<div class="bot-count-data" data-count="' . $total_count . '">';
         if ($total_count > 0) {
-            echo '<div class="bot-count">Showing ' . count($activities) . ' of ' . $total_count . ' bot activities</div>';
+            echo '<div class="bot-count">Showing ' . count($activities) . ' unique IPs of ' . $total_count . ' total activities</div>';
         } else {
             echo '<div class="bot-noresults">No bot activity found</div>';
         }
@@ -348,7 +373,7 @@ class BotDashboard {
                 }
                 
                 echo '<a href="#" class="bot-action bot-action-whitelist" data-bot-action="whitelist" data-id="' . $activity->id . '" data-ip="' . esc_attr($activity->ip_address) . '" title="Whitelist this IP"></a>';
-                echo '<a href="#" class="bot-action bot-action-delete" data-bot-action="delete" data-id="' . $activity->id . '" title="Delete this entry"></a>';
+                echo '<a href="#" class="bot-action bot-action-delete" data-bot-action="delete" data-id="' . $activity->id . '" data-ip="' . esc_attr($activity->ip_address) . '" title="Delete this entry"></a>';
                 
                 echo '<select class="bot-select-target">';
                 echo '<option value="ip">Target IP</option>';
@@ -358,10 +383,26 @@ class BotDashboard {
                 
                 echo '</div>';
                 
-                // Request details
+                // IMPROVED: Request details with multiple URLs
                 echo '<div class="bot-request">';
-                echo '<span class="bot-label">Request:</span>';
-                echo '<a href="#" data-request="' . esc_attr($activity->request_uri) . '">' . esc_html(substr($activity->request_uri, 0, 50)) . '...</a>';
+                echo '<span class="bot-label">Recent URLs:</span><br>';
+                
+                // Handle multiple URLs separated by |
+                $urls = explode('|', $activity->request_uri);
+                $display_urls = array_slice($urls, -3); // Show last 3 URLs
+                
+                foreach ($display_urls as $url) {
+                    $clean_url = esc_html($url);
+                    if (strlen($clean_url) > 60) {
+                        $clean_url = substr($clean_url, 0, 60) . '...';
+                    }
+                    echo '<div class="url-entry">' . $clean_url . '</div>';
+                }
+                
+                if (count($urls) > 3) {
+                    echo '<div class="url-more">+' . (count($urls) - 3) . ' more URLs</div>';
+                }
+                
                 echo '</div>';
                 
                 // User agent
@@ -386,6 +427,14 @@ class BotDashboard {
                 echo '<div class="bot-box">';
                 echo '<span class="bot-label">Full User Agent:</span>';
                 echo '<span class="bot-value">' . esc_html($activity->user_agent) . '</span>';
+                echo '</div>';
+                echo '<div class="bot-box">';
+                echo '<span class="bot-label">All URLs:</span>';
+                echo '<div class="bot-value">';
+                foreach ($urls as $url) {
+                    echo '<div>' . esc_html($url) . '</div>';
+                }
+                echo '</div>';
                 echo '</div>';
                 echo '</div>';
                 
@@ -496,17 +545,21 @@ class BotDashboard {
                     break;
                     
                 case 'delete':
-                    // Delete the entry
+                    // FIXED: Delete all entries for this IP, not just by ID
                     $result = $wpdb->delete(
                         $this->table_name,
-                        array('id' => $id),
-                        array('%d')
+                        array('ip_address' => $ip),
+                        array('%s')
                     );
                     
                     if ($result !== false) {
-                        wp_send_json_success('Entry deleted successfully');
+                        // Remove from transient cache
+                        $blocked_transient = 'bot_blocked_' . md5($ip);
+                        delete_transient($blocked_transient);
+                        
+                        wp_send_json_success('IP entries deleted successfully');
                     } else {
-                        wp_send_json_error('Failed to delete entry');
+                        wp_send_json_error('Failed to delete IP entries');
                     }
                     break;
                     
@@ -776,6 +829,30 @@ class BotDashboard {
                 </div>
             </div>
         </div>
+        
+        <style>
+        .url-entry {
+            font-size: 11px;
+            color: #666;
+            margin: 2px 0;
+            padding: 2px 4px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 2px;
+        }
+        .url-more {
+            font-size: 10px;
+            color: #999;
+            font-style: italic;
+            margin-top: 4px;
+        }
+        .bot-request {
+            margin-top: 10px;
+        }
+        .bot-request .bot-label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        </style>
         <?php
     }
 }
