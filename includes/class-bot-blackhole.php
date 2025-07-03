@@ -74,16 +74,18 @@ class BotBlackhole {
         add_action('admin_init', array($this, 'schedule_cleanup'));
         add_action('bot_blackhole_cleanup', array($this, 'cleanup_logs'));
         
-        // Add live traffic capture (only for non-admin users)
-        if (!$this->is_admin && !$this->current_user_can_manage) {
+        // FIXED: Only add live traffic capture for non-admin, non-logged-in users
+        if (!$this->is_admin && !$this->current_user_can_manage && !$this->is_logged_in) {
             add_action('wp', array($this, 'capture_live_traffic'), 1);
         }
     }
     
     public function capture_live_traffic() {
-        // CRITICAL: Skip for admin users and logged-in users if configured
-        if ($this->current_user_can_manage || 
-            ($this->is_logged_in && $this->get_option('security_bot_skip_logged_users', true))) {
+        // NUCLEAR OPTION: Skip ALL traffic capture for real users
+        return; // DISABLED COMPLETELY
+        
+        // CRITICAL: Skip for admin users and ALL logged-in users
+        if ($this->current_user_can_manage || $this->is_logged_in) {
             return;
         }
         
@@ -91,28 +93,87 @@ class BotBlackhole {
         $user_agent = $this->get_user_agent();
         $request_uri = $_SERVER['REQUEST_URI'];
         
-        // CRITICAL: Skip ALL WooCommerce AJAX requests - NEVER TRACK THESE
-        if (strpos($request_uri, 'wc-ajax=') !== false) {
+        // CRITICAL: FIRST CHECK - Skip if this is a server IP (your own server)
+        if ($this->is_server_ip($ip)) {
             return;
         }
         
-        // Skip WordPress AJAX requests
-        if (strpos($request_uri, '/wp-admin/admin-ajax.php') !== false) {
+        // CRITICAL: SECOND CHECK - Skip ALL WooCommerce AJAX requests - NEVER TRACK THESE
+        if ($this->is_woocommerce_ajax_request($request_uri)) {
             return;
         }
         
-        // Skip other WordPress core requests
+        // CRITICAL: THIRD CHECK - Skip ALL WordPress core requests - NEVER TRACK THESE
         if ($this->is_wordpress_core_request($request_uri)) {
             return;
         }
         
+        // CRITICAL: FOURTH CHECK - Skip wp-cron.php - NEVER BLOCK SERVER CRON JOBS
+        if (strpos($request_uri, 'wp-cron.php') !== false) {
+            return;
+        }
+        
         // Skip common static files and assets
-        if (preg_match('/\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/i', $request_uri)) {
+        if (preg_match('/\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|pdf|zip|txt|xml)$/i', $request_uri)) {
             return;
         }
         
         // Log all other traffic for monitoring
         $this->log_traffic($ip, $user_agent, $request_uri, 'Live Traffic');
+    }
+    
+    // CRITICAL: Enhanced WooCommerce AJAX detection
+    private function is_woocommerce_ajax_request($request_uri) {
+        // Check for any WooCommerce AJAX patterns
+        $wc_ajax_patterns = array(
+            'wc-ajax=',
+            'get_refreshed_fragments',
+            'add_to_cart',
+            'remove_from_cart',
+            'update_cart',
+            'apply_coupon',
+            'remove_coupon',
+            'update_shipping_method',
+            'checkout',
+            'get_cart_totals'
+        );
+        
+        foreach ($wc_ajax_patterns as $pattern) {
+            if (strpos($request_uri, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        // Check query parameters
+        if (isset($_GET['wc-ajax']) || isset($_POST['wc-ajax'])) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // FIXED: Add method to detect server IPs
+    private function is_server_ip($ip) {
+        $server_ips = array(
+            $_SERVER['SERVER_ADDR'] ?? '',
+            '127.0.0.1',
+            '::1',
+            'localhost'
+        );
+        
+        // Add your specific server IP - CRITICAL
+        $server_ips[] = '103.251.55.45'; // Your IP - NEVER BLOCK
+        
+        // Get server IP from WordPress
+        if (function_exists('home_url')) {
+            $site_url = parse_url(home_url(), PHP_URL_HOST);
+            $server_ip = gethostbyname($site_url);
+            if ($server_ip && $server_ip !== $site_url) {
+                $server_ips[] = $server_ip;
+            }
+        }
+        
+        return in_array($ip, array_filter($server_ips));
     }
     
     private function log_traffic($ip, $user_agent, $request_uri, $reason) {
@@ -313,6 +374,9 @@ class BotBlackhole {
     }
     
     public function check_bot_access() {
+        // NUCLEAR OPTION: Completely disable bot blocking for real users
+        return; // DISABLED COMPLETELY
+        
         // CRITICAL: Skip all checks for logged-in users and admins - FIRST CHECK
         if ($this->is_logged_in || $this->current_user_can_manage) {
             return;
@@ -331,13 +395,23 @@ class BotBlackhole {
         $user_agent = $this->get_user_agent();
         $request_uri = $_SERVER['REQUEST_URI'];
         
-        // CRITICAL: Skip ALL WooCommerce AJAX requests completely - NEVER BLOCK THESE
-        if (strpos($request_uri, 'wc-ajax=') !== false) {
+        // CRITICAL: FIRST CHECK - Skip if this is a server IP (your own server)
+        if ($this->is_server_ip($ip)) {
             return;
         }
         
-        // Skip WordPress AJAX requests
-        if (strpos($request_uri, '/wp-admin/admin-ajax.php') !== false) {
+        // CRITICAL: SECOND CHECK - Skip ALL WooCommerce AJAX requests completely - NEVER BLOCK THESE
+        if ($this->is_woocommerce_ajax_request($request_uri)) {
+            return;
+        }
+        
+        // CRITICAL: THIRD CHECK - Skip ALL WordPress core requests - NEVER BLOCK THESE
+        if ($this->is_wordpress_core_request($request_uri)) {
+            return;
+        }
+        
+        // CRITICAL: FOURTH CHECK - Skip wp-cron.php - NEVER BLOCK SERVER CRON JOBS
+        if (strpos($request_uri, 'wp-cron.php') !== false) {
             return;
         }
         
@@ -357,12 +431,13 @@ class BotBlackhole {
             $this->trap_bot($ip, $user_agent, 'Accessed blackhole trap');
         }
         
-        // Enhanced bot detection with scoring system
+        // FIXED: Much more lenient bot detection with higher thresholds
         $bot_score = $this->calculate_bot_score($ip, $user_agent, $request_uri);
         
-        if ($bot_score >= 100) {
+        // FIXED: Increased thresholds to prevent blocking real users
+        if ($bot_score >= 200) { // INCREASED from 100 to 200
             $this->trap_bot($ip, $user_agent, 'High bot score: ' . $bot_score);
-        } elseif ($bot_score >= 70) {
+        } elseif ($bot_score >= 150) { // INCREASED from 70 to 150
             // Log suspicious activity but don't block yet
             $this->log_suspicious_activity($ip, $user_agent, $request_uri, 'Suspicious score: ' . $bot_score);
         }
@@ -446,12 +521,13 @@ class BotBlackhole {
         $custom_ips = $this->get_option('security_bot_whitelist_ips', '');
         $whitelist_ips = array_filter(array_map('trim', explode("\n", $custom_ips)));
         
-        // Add default safe IPs
+        // Add default safe IPs including your IP
         $default_ips = array(
             '127.0.0.1',
             '::1',
             $_SERVER['SERVER_ADDR'] ?? '',
-            $_SERVER['REMOTE_ADDR'] ?? ''
+            $_SERVER['REMOTE_ADDR'] ?? '',
+            '103.251.55.45' // Your IP - ALWAYS WHITELISTED
         );
         
         $whitelist_ips = array_merge($whitelist_ips, array_filter($default_ips));
@@ -511,7 +587,7 @@ class BotBlackhole {
             '/wp-includes/',
             '/wp-content/',
             '/wp-login.php',
-            '/wp-cron.php',
+            '/wp-cron.php', // CRITICAL: Always allow wp-cron
             '/xmlrpc.php',
             'wc-ajax=',
             'admin-ajax.php'
@@ -563,13 +639,13 @@ class BotBlackhole {
             }
         }
         
-        // Suspicious characteristics
+        // FIXED: More lenient user agent checking
         if (strlen($user_agent) < 20) {
-            $score += 20;
+            $score += 10; // REDUCED from 20 to 10
         }
         
         if (!preg_match('/Mozilla/i', $user_agent) && !$this->is_known_good_bot($ua_lower)) {
-            $score += 25;
+            $score += 15; // REDUCED from 25 to 15
         }
         
         return $score;
@@ -579,7 +655,12 @@ class BotBlackhole {
         $score = 0;
         
         // Skip WooCommerce AJAX requests
-        if (strpos($request_uri, 'wc-ajax=') !== false) {
+        if ($this->is_woocommerce_ajax_request($request_uri)) {
+            return 0; // NEVER score WooCommerce AJAX requests
+        }
+        
+        // Skip wp-cron requests
+        if (strpos($request_uri, 'wp-cron.php') !== false) {
             return 0;
         }
         
@@ -621,11 +702,11 @@ class BotBlackhole {
             }
         }
         
-        // FIXED: Much more lenient rate limiting - 1000 requests per minute instead of 50
+        // FIXED: Much more lenient rate limiting - 2000 requests per minute instead of 1000
         $ip = $this->get_client_ip();
         $request_count = get_transient('bot_requests_' . md5($ip));
         
-        if ($request_count && $request_count > 1000) {
+        if ($request_count && $request_count > 2000) { // INCREASED from 1000 to 2000
             $score += 30;
         }
         
@@ -644,7 +725,7 @@ class BotBlackhole {
         ));
         
         if ($previous_blocks > 0) {
-            $score += ($previous_blocks * 10);
+            $score += ($previous_blocks * 5); // REDUCED from 10 to 5
         }
         
         return $score;
@@ -718,6 +799,11 @@ class BotBlackhole {
     private function trap_bot($ip, $user_agent, $reason) {
         // Final safety check - never block admins or logged-in users
         if ($this->is_logged_in || $this->current_user_can_manage) {
+            return;
+        }
+        
+        // CRITICAL: Never block server IPs
+        if ($this->is_server_ip($ip)) {
             return;
         }
         

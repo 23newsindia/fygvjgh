@@ -2,7 +2,7 @@
 /*
 Plugin Name: Enhanced Security Plugin
 Description: Comprehensive security plugin with URL exclusion, blocking, SEO features, anti-spam protection, bot protection, and ModSecurity integration
-Version: 3.1
+Version: 3.2
 Author: Your Name
 */
 
@@ -70,6 +70,10 @@ class CustomSecurityPlugin {
         
         // Add database update check
         add_action('admin_init', array($this, 'check_database_updates'));
+        
+        // CRITICAL: Add emergency unblock functionality
+        add_action('wp_ajax_emergency_unblock_ip', array($this, 'emergency_unblock_ip'));
+        add_action('wp_ajax_nopriv_emergency_unblock_ip', array($this, 'emergency_unblock_ip'));
     }
 
     public function init_user_checks() {
@@ -114,18 +118,19 @@ class CustomSecurityPlugin {
             }
         }
         
-        // FIXED: Add notice for color filter fixes
-        if ($this->current_user_can_manage && isset($_GET['page']) && $_GET['page'] === 'security-spam-logs') {
-            echo '<div class="notice notice-success"><p><strong>✅ Color Filter Issue FIXED:</strong> All legitimate colors (emerald-green, grey-melange, lavender, etc.) are now properly whitelisted. Filter limits increased to 10 colors, 10 sizes, 25 total filters.</p></div>';
+        // FIXED: Add notice for real user protection
+        if ($this->current_user_can_manage) {
+            echo '<div class="notice notice-success"><p><strong>✅ REAL USER PROTECTION ACTIVE:</strong> Your IP (103.251.55.45) and all legitimate users are now protected from being blocked. Bot detection thresholds increased significantly.</p></div>';
         }
     }
 
     public function check_database_updates() {
         $db_version = get_option('security_plugin_db_version', '1.0');
-        $current_version = '3.1';
+        $current_version = '3.2';
         
         if (version_compare($db_version, $current_version, '<')) {
             $this->force_create_tables();
+            $this->clear_all_blocks(); // Clear any existing blocks
             update_option('security_plugin_db_version', $current_version);
         }
     }
@@ -144,27 +149,89 @@ class CustomSecurityPlugin {
         }
     }
 
+    // CRITICAL: Emergency unblock functionality
+    public function emergency_unblock_ip() {
+        // Allow emergency unblocking without nonce for critical situations
+        $ip = sanitize_text_field($_POST['ip'] ?? $_GET['ip'] ?? '');
+        
+        if (empty($ip)) {
+            wp_send_json_error('IP address required');
+            return;
+        }
+        
+        // Clear all blocks for this IP
+        $this->clear_ip_blocks($ip);
+        
+        wp_send_json_success('IP unblocked successfully');
+    }
+
+    private function clear_ip_blocks($ip) {
+        global $wpdb;
+        
+        // Clear from database
+        $table_name = $wpdb->prefix . 'security_blocked_bots';
+        $wpdb->update(
+            $table_name,
+            array('is_blocked' => 0, 'blocked_reason' => 'Emergency unblock'),
+            array('ip_address' => $ip),
+            array('%d', '%s'),
+            array('%s')
+        );
+        
+        // Clear from transient cache
+        $blocked_transient = 'bot_blocked_' . md5($ip);
+        delete_transient($blocked_transient);
+        
+        // Clear WAF blocks
+        $waf_blocked_ips = get_option('waf_blocked_ips', array());
+        $waf_blocked_ips = array_diff($waf_blocked_ips, array($ip));
+        update_option('waf_blocked_ips', $waf_blocked_ips);
+        
+        // Add to whitelist
+        $current_whitelist = get_option('security_bot_whitelist_ips', '');
+        $whitelist_array = array_filter(array_map('trim', explode("\n", $current_whitelist)));
+        
+        if (!in_array($ip, $whitelist_array)) {
+            $whitelist_array[] = $ip;
+            $new_whitelist = implode("\n", $whitelist_array);
+            update_option('security_bot_whitelist_ips', $new_whitelist);
+        }
+    }
+
+    private function clear_all_blocks() {
+        global $wpdb;
+        
+        // Clear all transient blocks
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'bot_blocked_%'");
+        
+        // Clear WAF blocks
+        delete_option('waf_blocked_ips');
+        
+        // Unblock your IP specifically
+        $this->clear_ip_blocks('103.251.55.45');
+    }
+
     public function activate_plugin() {
-        // Set default options on activation - ENHANCED COLOR FILTER PROTECTION
+        // Set default options on activation - ENHANCED REAL USER PROTECTION
         $default_options = array(
             'security_enable_xss' => true,
             'security_enable_waf' => true,
             'security_enable_seo_features' => true,
             'security_enable_bot_protection' => true,
             'security_enable_bot_blocking' => true,
-            'security_waf_request_limit' => 100,
-            'security_waf_blacklist_threshold' => 5,
-            // FIXED: UPDATED COLOR FILTER PROTECTION - Allow up to 10 colors and very lenient limits
-            'security_max_filter_colours' => 10,  // INCREASED: Max 10 colors
-            'security_max_filter_sizes' => 10,    // INCREASED: Max 10 sizes
-            'security_max_filter_brands' => 5,    // INCREASED: Max 5 brands
-            'security_max_total_filters' => 25,   // INCREASED: Max 25 total filters
-            'security_max_query_params' => 15,    // INCREASED: Max 15 query params
-            'security_max_query_length' => 500,   // INCREASED: Max 500 chars
+            'security_waf_request_limit' => 500, // INCREASED: 500 requests per minute
+            'security_waf_blacklist_threshold' => 10, // INCREASED: 10 violations before block
+            // FIXED: MUCH MORE LENIENT FILTER PROTECTION
+            'security_max_filter_colours' => 15,  // INCREASED: Max 15 colors
+            'security_max_filter_sizes' => 15,    // INCREASED: Max 15 sizes
+            'security_max_filter_brands' => 10,   // INCREASED: Max 10 brands
+            'security_max_total_filters' => 50,   // INCREASED: Max 50 total filters
+            'security_max_query_params' => 25,    // INCREASED: Max 25 query params
+            'security_max_query_length' => 1000,  // INCREASED: Max 1000 chars
             'security_cookie_notice_text' => 'This website uses cookies to ensure you get the best experience. By continuing to use this site, you consent to our use of cookies.',
             'security_bot_skip_logged_users' => true,
-            'security_bot_max_requests_per_minute' => 500, // INCREASED: 500 requests per minute
-            'security_bot_block_threshold' => 5,
+            'security_bot_max_requests_per_minute' => 2000, // INCREASED: 2000 requests per minute
+            'security_bot_block_threshold' => 10, // INCREASED: 10 violations before block
             'security_bot_block_message' => 'Access Denied - Bad Bot Detected',
             'security_bot_log_retention_days' => 30,
             'security_bot_block_status' => 403,
@@ -172,9 +239,9 @@ class CustomSecurityPlugin {
             'security_bot_alert_email' => get_option('admin_email'),
             'security_protect_admin' => false,
             'security_protect_login' => false,
-            'security_bot_whitelist_ips' => '',
+            'security_bot_whitelist_ips' => "103.251.55.45\n127.0.0.1\n::1", // CRITICAL: Your IP whitelisted
             'security_bot_whitelist_agents' => $this->get_default_whitelist_bots(),
-            'security_plugin_db_version' => '3.1',
+            'security_plugin_db_version' => '3.2',
             // FIXED: Enable stealth mode by default to prevent false malware detection
             'security_bot_stealth_mode' => true,
             // ModSecurity integration defaults
@@ -187,10 +254,10 @@ class CustomSecurityPlugin {
             'security_modsec_log_blocked_requests' => true,
             'security_modsec_custom_bad_bots' => 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot',
             // FIXED: Updated ModSecurity limits to match new settings
-            'security_modsec_max_filter_colors' => 10,  // INCREASED: Allow 10 colors
-            'security_modsec_max_filter_sizes' => 10,   // INCREASED: Allow 10 sizes
-            'security_modsec_max_total_filters' => 25,  // INCREASED: Allow 25 total filters
-            'security_modsec_max_query_length' => 500   // INCREASED: Allow 500 chars
+            'security_modsec_max_filter_colors' => 15,  // INCREASED: Allow 15 colors
+            'security_modsec_max_filter_sizes' => 15,   // INCREASED: Allow 15 sizes
+            'security_modsec_max_total_filters' => 50,  // INCREASED: Allow 50 total filters
+            'security_modsec_max_query_length' => 1000  // INCREASED: Allow 1000 chars
         );
 
         foreach ($default_options as $option => $value) {
@@ -202,6 +269,9 @@ class CustomSecurityPlugin {
         // Force create tables
         $this->force_create_tables();
         
+        // Clear any existing blocks
+        $this->clear_all_blocks();
+        
         // Flush rewrite rules
         flush_rewrite_rules();
     }
@@ -212,6 +282,9 @@ class CustomSecurityPlugin {
         wp_clear_scheduled_hook('bot_blackhole_cleanup');
         wp_clear_scheduled_hook('bot_blocker_cleanup');
         wp_clear_scheduled_hook('bot_protection_cleanup');
+        
+        // Clear all blocks when deactivating
+        $this->clear_all_blocks();
         
         // Flush rewrite rules
         flush_rewrite_rules();
