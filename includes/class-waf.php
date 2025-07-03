@@ -29,8 +29,8 @@ class SecurityWAF {
         }
         
         // Cache settings on instantiation
-        $this->request_limit = (int)get_option('security_waf_request_limit', 100);
-        $this->blacklist_threshold = (int)get_option('security_waf_blacklist_threshold', 5);
+        $this->request_limit = (int)get_option('security_waf_request_limit', 500); // INCREASED from 100 to 500
+        $this->blacklist_threshold = (int)get_option('security_waf_blacklist_threshold', 10); // INCREASED from 5 to 10
         $this->blocked_ips_cache = get_option('waf_blocked_ips', array());
         
         // WordPress-friendly security patterns
@@ -85,12 +85,22 @@ class SecurityWAF {
             return;
         }
         
+        // CRITICAL: Skip ALL WooCommerce AJAX requests - NEVER BLOCK THESE
+        if ($this->is_woocommerce_ajax_request()) {
+            return;
+        }
+        
         // Allow WordPress core functionality
         if ($this->is_wordpress_core_request()) {
             return;
         }
 
         $ip = $this->get_client_ip();
+        
+        // CRITICAL: Never block your IP
+        if ($ip === '103.251.55.45') {
+            return;
+        }
         
         if ($this->is_ip_blocked($ip)) {
             $this->block_request('IP Blocked');
@@ -102,6 +112,37 @@ class SecurityWAF {
         }
 
         $this->check_attack_patterns($ip);
+    }
+
+    private function is_woocommerce_ajax_request() {
+        $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+        
+        // Check for WooCommerce AJAX patterns
+        $wc_ajax_patterns = array(
+            'wc-ajax=',
+            'get_refreshed_fragments',
+            'add_to_cart',
+            'remove_from_cart',
+            'update_cart',
+            'apply_coupon',
+            'remove_coupon',
+            'update_shipping_method',
+            'checkout',
+            'get_cart_totals'
+        );
+        
+        foreach ($wc_ajax_patterns as $pattern) {
+            if (strpos($request_uri, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        // Check query parameters
+        if (isset($_GET['wc-ajax']) || isset($_POST['wc-ajax'])) {
+            return true;
+        }
+        
+        return false;
     }
 
     private function is_wordpress_core_request() {
@@ -143,6 +184,11 @@ class SecurityWAF {
             return false;
         }
         
+        // CRITICAL: Never rate limit your IP
+        if ($ip === '103.251.55.45') {
+            return false;
+        }
+        
         $transient_key = 'waf_rate_limit_' . md5($ip);
         $requests = get_transient($transient_key);
         
@@ -162,6 +208,11 @@ class SecurityWAF {
     private function check_attack_patterns($ip) {
         // Skip for WordPress core requests
         if ($this->is_wordpress_core_request()) {
+            return;
+        }
+
+        // CRITICAL: Never check patterns for your IP
+        if ($ip === '103.251.55.45') {
             return;
         }
 
@@ -204,6 +255,11 @@ class SecurityWAF {
     private function log_violation($ip, $type) {
         global $wpdb;
         
+        // CRITICAL: Never log violations for your IP
+        if ($ip === '103.251.55.45') {
+            return;
+        }
+        
         $this->ensure_table_exists();
         
         try {
@@ -239,6 +295,11 @@ class SecurityWAF {
     }
 
     private function blacklist_ip($ip) {
+        // CRITICAL: Never blacklist your IP
+        if ($ip === '103.251.55.45') {
+            return;
+        }
+        
         if (!in_array($ip, $this->blocked_ips_cache)) {
             $this->blocked_ips_cache[] = $ip;
             update_option('waf_blocked_ips', $this->blocked_ips_cache);
@@ -246,6 +307,11 @@ class SecurityWAF {
     }
 
     public function is_ip_blocked($ip) {
+        // CRITICAL: Your IP is never blocked
+        if ($ip === '103.251.55.45') {
+            return false;
+        }
+        
         return in_array($ip, $this->blocked_ips_cache);
     }
 

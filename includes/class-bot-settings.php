@@ -27,7 +27,10 @@ class BotSettings {
             'bot_block_status' => get_option('security_bot_block_status', 403),
             'bot_custom_message' => get_option('security_bot_custom_message', ''),
             'protect_admin' => get_option('security_protect_admin', false),
-            'protect_login' => get_option('security_protect_login', false)
+            'protect_login' => get_option('security_protect_login', false),
+            'enable_traffic_capture' => get_option('security_enable_traffic_capture', false),
+            'max_traffic_entries' => get_option('security_max_traffic_entries', 1000),
+            'bot_stealth_mode' => get_option('security_bot_stealth_mode', true)
         );
         ?>
         <div id="bot-protection-tab" class="tab-content" style="display:none;">
@@ -40,6 +43,51 @@ class BotSettings {
                             Enable automatic bot detection and blocking (Blackhole System)
                         </label>
                         <p class="description">Automatically detects and blocks malicious bots and scrapers using blackhole traps and behavioral analysis</p>
+                    </td>
+                </tr>
+                
+                <tr style="background: #d1ecf1; border: 2px solid #17a2b8;">
+                    <th style="color: #0c5460;"><strong>🔍 Live Traffic Capture</strong></th>
+                    <td>
+                        <label>
+                            <input type="checkbox" name="enable_traffic_capture" value="1" <?php checked($options['enable_traffic_capture']); ?>>
+                            <strong>Enable Live Traffic Monitoring</strong>
+                        </label>
+                        <p class="description" style="color: #0c5460;"><strong>Monitor all website traffic for analysis (disabled by default to prevent blocking real users)</strong></p>
+                        
+                        <br><br>
+                        <label>
+                            Maximum Traffic Entries:
+                            <input type="number" name="max_traffic_entries" value="<?php echo esc_attr($options['max_traffic_entries']); ?>" min="100" max="10000">
+                        </label>
+                        <p class="description">Maximum number of traffic entries to keep in database (older entries are automatically deleted)</p>
+                        
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin-top: 10px;">
+                            <strong>🛡️ Traffic Capture Features:</strong>
+                            <ul style="margin: 5px 0 0 20px;">
+                                <li>✅ Monitors non-admin, non-logged-in users only</li>
+                                <li>✅ Automatically excludes WooCommerce AJAX requests</li>
+                                <li>✅ Skips WordPress core requests</li>
+                                <li>✅ Ignores static files (CSS, JS, images)</li>
+                                <li>✅ Database size limit protection</li>
+                                <li>✅ Your IP (103.251.55.45) is always excluded</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <strong>⚠️ Important:</strong> Traffic capture is disabled by default because it was causing legitimate users to be tracked and potentially blocked. Only enable if you need detailed traffic analysis.
+                        </div>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th>Stealth Mode</th>
+                    <td>
+                        <label>
+                            <input type="checkbox" name="bot_stealth_mode" value="1" <?php checked($options['bot_stealth_mode']); ?>>
+                            Enable stealth mode blackhole traps
+                        </label>
+                        <p class="description">Uses JavaScript-based hidden traps instead of HTML (recommended to avoid false malware detection)</p>
                     </td>
                 </tr>
                 
@@ -171,15 +219,66 @@ class BotSettings {
                 </tr>
                 
                 <tr>
+                    <th>Database Management</th>
+                    <td>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; border-left: 4px solid #007cba;">
+                            <h4>Clear Traffic Logs</h4>
+                            <p>Remove all non-blocked traffic entries from the database to free up space.</p>
+                            <button type="button" id="clear-traffic-logs" class="button">Clear Traffic Logs</button>
+                            <span id="clear-logs-status" style="margin-left: 10px;"></span>
+                        </div>
+                        
+                        <script>
+                        document.getElementById('clear-traffic-logs').addEventListener('click', function() {
+                            if (!confirm('Are you sure you want to clear all traffic logs? This will remove all non-blocked entries from the database.')) {
+                                return;
+                            }
+                            
+                            var button = this;
+                            var status = document.getElementById('clear-logs-status');
+                            
+                            button.disabled = true;
+                            button.textContent = 'Clearing...';
+                            status.textContent = '';
+                            
+                            fetch(ajaxurl, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                },
+                                body: 'action=clear_traffic_logs&nonce=' + encodeURIComponent('<?php echo wp_create_nonce('clear_traffic_logs'); ?>')
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    status.innerHTML = '<span style="color: green;">✓ Traffic logs cleared successfully!</span>';
+                                } else {
+                                    status.innerHTML = '<span style="color: red;">✗ Error: ' + (data.data || 'Unknown error') + '</span>';
+                                }
+                            })
+                            .catch(error => {
+                                status.innerHTML = '<span style="color: red;">✗ Network error occurred</span>';
+                            })
+                            .finally(() => {
+                                button.disabled = false;
+                                button.textContent = 'Clear Traffic Logs';
+                            });
+                        });
+                        </script>
+                    </td>
+                </tr>
+                
+                <tr>
                     <th>Blackhole Trap</th>
                     <td>
                         <p class="description"><strong>Blackhole Trap Features:</strong></p>
                         <ul style="list-style-type: disc; margin-left: 20px;">
                             <li>Hidden links that only bots can see and follow</li>
                             <li>Automatic addition to robots.txt disallow list</li>
-                            <li>Intelligent scoring system for bot detection</li>
-                            <li>Behavioral analysis and pattern recognition</li>
+                            <li>Intelligent detection for obviously malicious requests only</li>
+                            <li>Enhanced WooCommerce filter protection</li>
                             <li>Automatic IP blocking with transient caching</li>
+                            <li>Your IP (103.251.55.45) is permanently whitelisted</li>
                         </ul>
                         <p class="description">The blackhole system creates invisible traps that legitimate users never see, but bots often follow, allowing for accurate bot detection.</p>
                     </td>
@@ -197,6 +296,7 @@ duckduckbot
 baiduspider
 yandexbot
 facebookexternalhit
+meta-externalagent
 twitterbot
 linkedinbot
 pinterestbot
@@ -235,6 +335,9 @@ wordfence';
         update_option('security_bot_whitelist_ips', sanitize_textarea_field($_POST['bot_whitelist_ips']));
         update_option('security_bot_whitelist_agents', sanitize_textarea_field($_POST['bot_whitelist_agents']));
         update_option('security_bot_log_retention_days', intval($_POST['bot_log_retention_days']));
+        update_option('security_enable_traffic_capture', isset($_POST['enable_traffic_capture']));
+        update_option('security_max_traffic_entries', intval($_POST['max_traffic_entries']));
+        update_option('security_bot_stealth_mode', isset($_POST['bot_stealth_mode']));
     }
     
     public function register_bot_settings() {
@@ -252,7 +355,10 @@ wordfence';
             'security_bot_alert_email',
             'security_bot_whitelist_ips',
             'security_bot_whitelist_agents',
-            'security_bot_log_retention_days'
+            'security_bot_log_retention_days',
+            'security_enable_traffic_capture',
+            'security_max_traffic_entries',
+            'security_bot_stealth_mode'
         );
         
         foreach ($settings as $setting) {

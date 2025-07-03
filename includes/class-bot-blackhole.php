@@ -74,15 +74,20 @@ class BotBlackhole {
         add_action('admin_init', array($this, 'schedule_cleanup'));
         add_action('bot_blackhole_cleanup', array($this, 'cleanup_logs'));
         
-        // FIXED: Only add live traffic capture for non-admin, non-logged-in users
-        if (!$this->is_admin && !$this->current_user_can_manage && !$this->is_logged_in) {
+        // FIXED: Add traffic capture with option control
+        if ($this->get_option('security_enable_traffic_capture', false) && 
+            !$this->is_admin && 
+            !$this->current_user_can_manage && 
+            !$this->is_logged_in) {
             add_action('wp', array($this, 'capture_live_traffic'), 1);
         }
     }
     
     public function capture_live_traffic() {
-        // NUCLEAR OPTION: Skip ALL traffic capture for real users
-        return; // DISABLED COMPLETELY
+        // Check if traffic capture is enabled
+        if (!$this->get_option('security_enable_traffic_capture', false)) {
+            return;
+        }
         
         // CRITICAL: Skip for admin users and ALL logged-in users
         if ($this->current_user_can_manage || $this->is_logged_in) {
@@ -113,6 +118,11 @@ class BotBlackhole {
             return;
         }
         
+        // FIXED: Skip legitimate WooCommerce filter URLs
+        if ($this->is_legitimate_woocommerce_filter($request_uri)) {
+            return;
+        }
+        
         // Skip common static files and assets
         if (preg_match('/\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|pdf|zip|txt|xml)$/i', $request_uri)) {
             return;
@@ -122,7 +132,7 @@ class BotBlackhole {
         $this->log_traffic($ip, $user_agent, $request_uri, 'Live Traffic');
     }
     
-    // CRITICAL: Enhanced WooCommerce AJAX detection
+    // FIXED: Enhanced WooCommerce AJAX detection
     private function is_woocommerce_ajax_request($request_uri) {
         // Check for any WooCommerce AJAX patterns
         $wc_ajax_patterns = array(
@@ -152,6 +162,38 @@ class BotBlackhole {
         return false;
     }
     
+    // NEW: Check for legitimate WooCommerce filter URLs
+    private function is_legitimate_woocommerce_filter($request_uri) {
+        // Only check if WooCommerce is active
+        if (!class_exists('WooCommerce')) {
+            return false;
+        }
+        
+        // Check if this is a product category or shop page
+        if (strpos($request_uri, '/product-category/') === false && 
+            strpos($request_uri, '/shop/') === false) {
+            return false;
+        }
+        
+        // Parse URL to check filters
+        $parsed_url = parse_url($request_uri);
+        if (!isset($parsed_url['query'])) {
+            return true; // No query params = legitimate
+        }
+        
+        parse_str($parsed_url['query'], $query_params);
+        
+        // NUCLEAR OPTION: Allow ALL filter combinations - no limits
+        // If it has filter_ parameters, it's legitimate
+        foreach ($query_params as $key => $value) {
+            if (strpos($key, 'filter_') === 0) {
+                return true; // Any filter parameter = legitimate
+            }
+        }
+        
+        return true; // Default to legitimate
+    }
+    
     // FIXED: Add method to detect server IPs
     private function is_server_ip($ip) {
         $server_ips = array(
@@ -163,6 +205,7 @@ class BotBlackhole {
         
         // Add your specific server IP - CRITICAL
         $server_ips[] = '103.251.55.45'; // Your IP - NEVER BLOCK
+        $server_ips[] = '103.170.146.58'; // New IP - NEVER BLOCK
         
         // Get server IP from WordPress
         if (function_exists('home_url')) {
@@ -180,6 +223,21 @@ class BotBlackhole {
         global $wpdb;
         
         try {
+            // Check database size limit
+            $max_entries = $this->get_option('security_max_traffic_entries', 1000);
+            $current_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->table_name} WHERE is_blocked = 0");
+            
+            if ($current_count >= $max_entries) {
+                // Remove oldest entries
+                $wpdb->query($wpdb->prepare(
+                    "DELETE FROM {$this->table_name} 
+                     WHERE is_blocked = 0 
+                     ORDER BY last_seen ASC 
+                     LIMIT %d",
+                    $current_count - $max_entries + 100
+                ));
+            }
+            
             // FIXED: Check if this IP already exists (not just in last hour)
             $existing = $wpdb->get_row($wpdb->prepare(
                 "SELECT id, hits, request_uri FROM {$this->table_name} 
@@ -374,8 +432,8 @@ class BotBlackhole {
     }
     
     public function check_bot_access() {
-        // NUCLEAR OPTION: Completely disable bot blocking for real users
-        return; // DISABLED COMPLETELY
+        // NUCLEAR OPTION: ONLY block if accessing blackhole trap directly
+        // Skip ALL other checks for real users
         
         // CRITICAL: Skip all checks for logged-in users and admins - FIRST CHECK
         if ($this->is_logged_in || $this->current_user_can_manage) {
@@ -415,32 +473,72 @@ class BotBlackhole {
             return;
         }
         
+        // CRITICAL: FIFTH CHECK - Skip legitimate WooCommerce filter URLs
+        if ($this->is_legitimate_woocommerce_filter($request_uri)) {
+            return;
+        }
+        
         // Enhanced whitelist check - FIRST priority
         if ($this->is_whitelisted($ip, $user_agent, $request_uri)) {
             return;
         }
         
-        // Fast IP block check using transient cache
-        $blocked_transient = 'bot_blocked_' . md5($ip);
-        if (get_transient($blocked_transient)) {
-            $this->block_bot('IP previously blocked');
-        }
-        
-        // Check if accessing blackhole trap
+        // NUCLEAR OPTION: ONLY block if accessing blackhole trap
         if (strpos($request_uri, '/blackhole-trap/') !== false || strpos($request_uri, 'blackhole') !== false) {
             $this->trap_bot($ip, $user_agent, 'Accessed blackhole trap');
         }
         
-        // FIXED: Much more lenient bot detection with higher thresholds
-        $bot_score = $this->calculate_bot_score($ip, $user_agent, $request_uri);
-        
-        // FIXED: Increased thresholds to prevent blocking real users
-        if ($bot_score >= 200) { // INCREASED from 100 to 200
-            $this->trap_bot($ip, $user_agent, 'High bot score: ' . $bot_score);
-        } elseif ($bot_score >= 150) { // INCREASED from 70 to 150
-            // Log suspicious activity but don't block yet
-            $this->log_suspicious_activity($ip, $user_agent, $request_uri, 'Suspicious score: ' . $bot_score);
+        // ONLY block obvious malicious patterns - not legitimate users
+        if ($this->is_obviously_malicious($request_uri, $user_agent)) {
+            $this->trap_bot($ip, $user_agent, 'Obviously malicious request');
         }
+    }
+    
+    // NEW: Only detect obviously malicious patterns
+    private function is_obviously_malicious($request_uri, $user_agent) {
+        // Only block obvious attack patterns
+        $malicious_patterns = array(
+            '/wp-config.php',
+            '/.env',
+            '/phpmyadmin',
+            '/admin/config.php',
+            '/xmlrpc.php',
+            '/.git/',
+            '/backup.sql',
+            '/database.sql',
+            'union+select',
+            'base64_decode',
+            'eval(',
+            'system(',
+            'exec(',
+            'shell_exec'
+        );
+        
+        foreach ($malicious_patterns as $pattern) {
+            if (stripos($request_uri, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        // Check for obviously malicious user agents
+        $malicious_agents = array(
+            'sqlmap',
+            'nikto',
+            'nessus',
+            'openvas',
+            'nmap',
+            'masscan',
+            'zgrab'
+        );
+        
+        $user_agent_lower = strtolower($user_agent);
+        foreach ($malicious_agents as $agent) {
+            if (strpos($user_agent_lower, $agent) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     private function is_login_page() {
@@ -466,34 +564,8 @@ class BotBlackhole {
         if (strpos($user_agent_lower, 'meta-externalagent') !== false || 
             strpos($user_agent_lower, 'facebookexternalhit') !== false) {
             
-            // FIXED: Allow Facebook crawlers with reasonable filter parameters
-            if (strpos($request_uri, 'filter_') !== false) {
-                $parsed_url = parse_url($request_uri);
-                if (isset($parsed_url['query'])) {
-                    parse_str($parsed_url['query'], $query_params);
-                    
-                    // Count filter parameters
-                    $filter_count = 0;
-                    $total_filter_values = 0;
-                    
-                    foreach ($query_params as $key => $value) {
-                        if (strpos($key, 'filter_') === 0) {
-                            $filter_count++;
-                            $values = explode(',', $value);
-                            $total_filter_values += count($values);
-                        }
-                    }
-                    
-                    // FIXED: Allow Facebook crawler with reasonable limits
-                    // Allow up to 3 filter types with max 6 total values
-                    if ($filter_count <= 3 && $total_filter_values <= 6) {
-                        return true; // Whitelist legitimate Facebook crawler
-                    }
-                }
-            } else {
-                // Always allow Facebook crawler on non-filter pages
-                return true;
-            }
+            // Always allow Facebook crawlers - they're legitimate
+            return true;
         }
         
         // Check whitelisted user agents
@@ -527,7 +599,8 @@ class BotBlackhole {
             '::1',
             $_SERVER['SERVER_ADDR'] ?? '',
             $_SERVER['REMOTE_ADDR'] ?? '',
-            '103.251.55.45' // Your IP - ALWAYS WHITELISTED
+            '103.251.55.45', // Your IP - ALWAYS WHITELISTED
+            '103.170.146.58'  // New IP - ALWAYS WHITELISTED
         );
         
         $whitelist_ips = array_merge($whitelist_ips, array_filter($default_ips));
@@ -602,200 +675,6 @@ class BotBlackhole {
         return false;
     }
     
-    private function calculate_bot_score($ip, $user_agent, $request_uri) {
-        $score = 0;
-        
-        // User agent analysis
-        $score += $this->analyze_user_agent($user_agent);
-        
-        // Request pattern analysis
-        $score += $this->analyze_request_pattern($request_uri);
-        
-        // Behavioral analysis
-        $score += $this->analyze_behavior($ip);
-        
-        return $score;
-    }
-    
-    private function analyze_user_agent($user_agent) {
-        $score = 0;
-        $ua_lower = strtolower($user_agent);
-        
-        // Empty or minimal user agent
-        if (empty($user_agent) || $user_agent === '-') {
-            $score += 50;
-        }
-        
-        // Known bad bot patterns
-        $bad_patterns = array(
-            'bot', 'crawler', 'spider', 'scraper', 'scanner', 'harvester',
-            'extractor', 'libwww', 'curl', 'wget', 'python', 'perl', 'java',
-            'php', 'masscan', 'nmap', 'sqlmap', 'nikto'
-        );
-        
-        foreach ($bad_patterns as $pattern) {
-            if (strpos($ua_lower, $pattern) !== false) {
-                $score += 30;
-            }
-        }
-        
-        // FIXED: More lenient user agent checking
-        if (strlen($user_agent) < 20) {
-            $score += 10; // REDUCED from 20 to 10
-        }
-        
-        if (!preg_match('/Mozilla/i', $user_agent) && !$this->is_known_good_bot($ua_lower)) {
-            $score += 15; // REDUCED from 25 to 15
-        }
-        
-        return $score;
-    }
-    
-    private function analyze_request_pattern($request_uri) {
-        $score = 0;
-        
-        // Skip WooCommerce AJAX requests
-        if ($this->is_woocommerce_ajax_request($request_uri)) {
-            return 0; // NEVER score WooCommerce AJAX requests
-        }
-        
-        // Skip wp-cron requests
-        if (strpos($request_uri, 'wp-cron.php') !== false) {
-            return 0;
-        }
-        
-        // Suspicious request patterns
-        $suspicious_patterns = array(
-            '/wp-config', '/xmlrpc', '/.env', '/phpmyadmin',
-            '/admin', '/wp-json/wp/v2/users', '/.git',
-            '/backup', '/sql', '/database'
-        );
-        
-        foreach ($suspicious_patterns as $pattern) {
-            if (strpos($request_uri, $pattern) !== false) {
-                $score += 40;
-            }
-        }
-        
-        // ENHANCED: Check for filter spam patterns
-        if (strpos($request_uri, 'filter_') !== false) {
-            $parsed_url = parse_url($request_uri);
-            if (isset($parsed_url['query'])) {
-                parse_str($parsed_url['query'], $query_params);
-                
-                // Count filter parameters
-                $filter_count = 0;
-                foreach ($query_params as $key => $value) {
-                    if (strpos($key, 'filter_') === 0) {
-                        $filter_count++;
-                        // Count comma-separated values
-                        $values = explode(',', $value);
-                        if (count($values) > 1) {
-                            $score += 20; // Multiple values in single filter
-                        }
-                    }
-                }
-                
-                if ($filter_count > 2) {
-                    $score += 30; // Too many filter types
-                }
-            }
-        }
-        
-        // FIXED: Much more lenient rate limiting - 2000 requests per minute instead of 1000
-        $ip = $this->get_client_ip();
-        $request_count = get_transient('bot_requests_' . md5($ip));
-        
-        if ($request_count && $request_count > 2000) { // INCREASED from 1000 to 2000
-            $score += 30;
-        }
-        
-        return $score;
-    }
-    
-    private function analyze_behavior($ip) {
-        $score = 0;
-        
-        // Check if IP has been flagged before
-        global $wpdb;
-        $previous_blocks = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$this->table_name} 
-             WHERE ip_address = %s AND timestamp > DATE_SUB(NOW(), INTERVAL 24 HOUR)",
-            $ip
-        ));
-        
-        if ($previous_blocks > 0) {
-            $score += ($previous_blocks * 5); // REDUCED from 10 to 5
-        }
-        
-        return $score;
-    }
-    
-    private function is_known_good_bot($user_agent) {
-        $good_bots = array(
-            'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider',
-            'yandexbot', 'facebookexternalhit', 'twitterbot', 'linkedinbot',
-            'pinterestbot', 'applebot', 'ia_archiver', 'meta-externalagent'
-        );
-        
-        foreach ($good_bots as $bot) {
-            if (strpos($user_agent, $bot) !== false) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    private function log_suspicious_activity($ip, $user_agent, $request_uri, $reason) {
-        global $wpdb;
-        
-        try {
-            // Check if this IP already exists
-            $existing = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE ip_address = %s",
-                $ip
-            ));
-            
-            if ($existing) {
-                // Update existing record
-                $wpdb->update(
-                    $this->table_name,
-                    array(
-                        'hits' => $existing->hits + 1,
-                        'last_seen' => current_time('mysql'),
-                        'request_uri' => $request_uri,
-                        'blocked_reason' => $reason
-                    ),
-                    array('ip_address' => $ip),
-                    array('%d', '%s', '%s', '%s'),
-                    array('%s')
-                );
-            } else {
-                // Insert new record
-                $wpdb->insert(
-                    $this->table_name,
-                    array(
-                        'ip_address' => $ip,
-                        'user_agent' => $user_agent,
-                        'request_uri' => $request_uri,
-                        'referrer' => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '',
-                        'timestamp' => current_time('mysql'),
-                        'first_seen' => current_time('mysql'),
-                        'last_seen' => current_time('mysql'),
-                        'block_reason' => $reason,
-                        'blocked_reason' => $reason,
-                        'is_blocked' => 0,
-                        'hits' => 1
-                    ),
-                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d')
-                );
-            }
-        } catch (Exception $e) {
-            error_log('Bot Blackhole Log Error: ' . $e->getMessage());
-        }
-    }
-    
     private function trap_bot($ip, $user_agent, $reason) {
         // Final safety check - never block admins or logged-in users
         if ($this->is_logged_in || $this->current_user_can_manage) {
@@ -804,6 +683,11 @@ class BotBlackhole {
         
         // CRITICAL: Never block server IPs
         if ($this->is_server_ip($ip)) {
+            return;
+        }
+        
+        // CRITICAL: Never block WooCommerce AJAX requests
+        if ($this->is_woocommerce_ajax_request($_SERVER['REQUEST_URI'])) {
             return;
         }
         
@@ -1027,6 +911,20 @@ wordfence';
                 ) AS temp
             )"
         );
+    }
+    
+    // NEW: Clear traffic logs
+    public function clear_traffic_logs() {
+        if (!current_user_can('manage_options')) {
+            return false;
+        }
+        
+        global $wpdb;
+        
+        // Clear only non-blocked entries (traffic logs)
+        $result = $wpdb->query("DELETE FROM {$this->table_name} WHERE is_blocked = 0");
+        
+        return $result !== false;
     }
     
     // AJAX handler for getting bot stats

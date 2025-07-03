@@ -2,7 +2,7 @@
 /*
 Plugin Name: Enhanced Security Plugin
 Description: Comprehensive security plugin with URL exclusion, blocking, SEO features, anti-spam protection, bot protection, and ModSecurity integration
-Version: 3.2
+Version: 3.4
 Author: Your Name
 */
 
@@ -74,6 +74,9 @@ class CustomSecurityPlugin {
         // CRITICAL: Add emergency unblock functionality
         add_action('wp_ajax_emergency_unblock_ip', array($this, 'emergency_unblock_ip'));
         add_action('wp_ajax_nopriv_emergency_unblock_ip', array($this, 'emergency_unblock_ip'));
+        
+        // NEW: Add clear traffic logs AJAX handler
+        add_action('wp_ajax_clear_traffic_logs', array($this, 'clear_traffic_logs'));
     }
 
     public function init_user_checks() {
@@ -118,15 +121,15 @@ class CustomSecurityPlugin {
             }
         }
         
-        // FIXED: Add notice for real user protection
+        // NUCLEAR OPTION NOTICE
         if ($this->current_user_can_manage) {
-            echo '<div class="notice notice-success"><p><strong>✅ REAL USER PROTECTION ACTIVE:</strong> Your IP (103.251.55.45) and all legitimate users are now protected from being blocked. Bot detection thresholds increased significantly.</p></div>';
+            echo '<div class="notice notice-success"><p><strong>🚀 NUCLEAR PROTECTION ACTIVE:</strong> Bot protection now ONLY blocks obvious malicious requests and blackhole trap access. All WooCommerce filter URLs and AJAX requests are completely whitelisted. Your IPs (103.251.55.45, 103.170.146.58) are permanently protected.</p></div>';
         }
     }
 
     public function check_database_updates() {
         $db_version = get_option('security_plugin_db_version', '1.0');
-        $current_version = '3.2';
+        $current_version = '3.4';
         
         if (version_compare($db_version, $current_version, '<')) {
             $this->force_create_tables();
@@ -163,6 +166,44 @@ class CustomSecurityPlugin {
         $this->clear_ip_blocks($ip);
         
         wp_send_json_success('IP unblocked successfully');
+    }
+
+    // NEW: Clear traffic logs AJAX handler
+    public function clear_traffic_logs() {
+        // Verify nonce
+        if (!check_ajax_referer('clear_traffic_logs', 'nonce', false)) {
+            wp_send_json_error('Invalid nonce');
+            return;
+        }
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+            return;
+        }
+        
+        try {
+            if ($this->bot_blackhole) {
+                $result = $this->bot_blackhole->clear_traffic_logs();
+                if ($result) {
+                    wp_send_json_success('Traffic logs cleared successfully');
+                } else {
+                    wp_send_json_error('Failed to clear traffic logs');
+                }
+            } else {
+                // Fallback direct database clear
+                global $wpdb;
+                $table_name = $wpdb->prefix . 'security_blocked_bots';
+                $result = $wpdb->query("DELETE FROM {$table_name} WHERE is_blocked = 0");
+                
+                if ($result !== false) {
+                    wp_send_json_success('Traffic logs cleared successfully');
+                } else {
+                    wp_send_json_error('Failed to clear traffic logs');
+                }
+            }
+        } catch (Exception $e) {
+            wp_send_json_error('Database error: ' . $e->getMessage());
+        }
     }
 
     private function clear_ip_blocks($ip) {
@@ -207,31 +248,32 @@ class CustomSecurityPlugin {
         // Clear WAF blocks
         delete_option('waf_blocked_ips');
         
-        // Unblock your IP specifically
+        // Unblock your IPs specifically
         $this->clear_ip_blocks('103.251.55.45');
+        $this->clear_ip_blocks('103.170.146.58');
     }
 
     public function activate_plugin() {
-        // Set default options on activation - ENHANCED REAL USER PROTECTION
+        // Set default options on activation - NUCLEAR PROTECTION
         $default_options = array(
             'security_enable_xss' => true,
             'security_enable_waf' => true,
             'security_enable_seo_features' => true,
             'security_enable_bot_protection' => true,
             'security_enable_bot_blocking' => true,
-            'security_waf_request_limit' => 500, // INCREASED: 500 requests per minute
-            'security_waf_blacklist_threshold' => 10, // INCREASED: 10 violations before block
-            // FIXED: MUCH MORE LENIENT FILTER PROTECTION
-            'security_max_filter_colours' => 15,  // INCREASED: Max 15 colors
-            'security_max_filter_sizes' => 15,    // INCREASED: Max 15 sizes
-            'security_max_filter_brands' => 10,   // INCREASED: Max 10 brands
-            'security_max_total_filters' => 50,   // INCREASED: Max 50 total filters
-            'security_max_query_params' => 25,    // INCREASED: Max 25 query params
-            'security_max_query_length' => 1000,  // INCREASED: Max 1000 chars
+            'security_waf_request_limit' => 1000, // INCREASED: 1000 requests per minute
+            'security_waf_blacklist_threshold' => 20, // INCREASED: 20 violations before block
+            // NUCLEAR: EXTREMELY LENIENT FILTER PROTECTION
+            'security_max_filter_colours' => 50,  // INCREASED: Max 50 colors
+            'security_max_filter_sizes' => 50,    // INCREASED: Max 50 sizes
+            'security_max_filter_brands' => 20,   // INCREASED: Max 20 brands
+            'security_max_total_filters' => 100,  // INCREASED: Max 100 total filters
+            'security_max_query_params' => 50,    // INCREASED: Max 50 query params
+            'security_max_query_length' => 2000,  // INCREASED: Max 2000 chars
             'security_cookie_notice_text' => 'This website uses cookies to ensure you get the best experience. By continuing to use this site, you consent to our use of cookies.',
             'security_bot_skip_logged_users' => true,
-            'security_bot_max_requests_per_minute' => 2000, // INCREASED: 2000 requests per minute
-            'security_bot_block_threshold' => 10, // INCREASED: 10 violations before block
+            'security_bot_max_requests_per_minute' => 5000, // INCREASED: 5000 requests per minute
+            'security_bot_block_threshold' => 50, // INCREASED: 50 violations before block
             'security_bot_block_message' => 'Access Denied - Bad Bot Detected',
             'security_bot_log_retention_days' => 30,
             'security_bot_block_status' => 403,
@@ -239,9 +281,12 @@ class CustomSecurityPlugin {
             'security_bot_alert_email' => get_option('admin_email'),
             'security_protect_admin' => false,
             'security_protect_login' => false,
-            'security_bot_whitelist_ips' => "103.251.55.45\n127.0.0.1\n::1", // CRITICAL: Your IP whitelisted
+            'security_bot_whitelist_ips' => "103.251.55.45\n103.170.146.58\n127.0.0.1\n::1", // BOTH IPs whitelisted
             'security_bot_whitelist_agents' => $this->get_default_whitelist_bots(),
-            'security_plugin_db_version' => '3.2',
+            'security_plugin_db_version' => '3.4',
+            // NUCLEAR: Traffic capture disabled by default
+            'security_enable_traffic_capture' => false,
+            'security_max_traffic_entries' => 1000,
             // FIXED: Enable stealth mode by default to prevent false malware detection
             'security_bot_stealth_mode' => true,
             // ModSecurity integration defaults
@@ -253,11 +298,11 @@ class CustomSecurityPlugin {
             'security_modsec_whitelist_search_bots' => true,
             'security_modsec_log_blocked_requests' => true,
             'security_modsec_custom_bad_bots' => 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot',
-            // FIXED: Updated ModSecurity limits to match new settings
-            'security_modsec_max_filter_colors' => 15,  // INCREASED: Allow 15 colors
-            'security_modsec_max_filter_sizes' => 15,   // INCREASED: Allow 15 sizes
-            'security_modsec_max_total_filters' => 50,  // INCREASED: Allow 50 total filters
-            'security_modsec_max_query_length' => 1000  // INCREASED: Allow 1000 chars
+            // NUCLEAR: Updated ModSecurity limits to match new settings
+            'security_modsec_max_filter_colors' => 50,  // INCREASED: Allow 50 colors
+            'security_modsec_max_filter_sizes' => 50,   // INCREASED: Allow 50 sizes
+            'security_modsec_max_total_filters' => 100, // INCREASED: Allow 100 total filters
+            'security_modsec_max_query_length' => 2000  // INCREASED: Allow 2000 chars
         );
 
         foreach ($default_options as $option => $value) {
