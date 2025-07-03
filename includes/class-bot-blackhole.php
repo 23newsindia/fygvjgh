@@ -331,12 +331,17 @@ class BotBlackhole {
         $user_agent = $this->get_user_agent();
         $request_uri = $_SERVER['REQUEST_URI'];
         
+        // ENHANCED: Check for suspicious Facebook crawler behavior
+        if ($this->is_suspicious_facebook_crawler($user_agent, $request_uri)) {
+            $this->trap_bot($ip, $user_agent, 'Suspicious Facebook crawler behavior');
+        }
+        
         // Enhanced whitelist check - FIRST priority
         if ($this->is_whitelisted($ip, $user_agent, $request_uri)) {
             return;
         }
         
-        // Skip WooCommerce AJAX requests completely
+        // CRITICAL: Skip WooCommerce AJAX requests completely - NEVER BLOCK THESE
         if (strpos($request_uri, 'wc-ajax=') !== false) {
             return;
         }
@@ -368,6 +373,31 @@ class BotBlackhole {
         }
     }
     
+    // NEW: Check for suspicious Facebook crawler behavior
+    private function is_suspicious_facebook_crawler($user_agent, $request_uri) {
+        // Check if it's claiming to be Facebook's crawler
+        if (strpos($user_agent, 'meta-externalagent') === false && 
+            strpos($user_agent, 'facebookexternalhit') === false) {
+            return false;
+        }
+        
+        // If it's accessing filter URLs, it's suspicious
+        if (strpos($request_uri, 'filter_') !== false) {
+            return true;
+        }
+        
+        // If it's accessing multiple query parameters, it's suspicious
+        $parsed_url = parse_url($request_uri);
+        if (isset($parsed_url['query'])) {
+            parse_str($parsed_url['query'], $query_params);
+            if (count($query_params) > 3) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
     private function is_login_page() {
         return in_array($GLOBALS['pagenow'], array('wp-login.php', 'wp-register.php'));
     }
@@ -384,8 +414,17 @@ class BotBlackhole {
             }
         }
         
-        // Check whitelisted user agents
+        // ENHANCED: More strict user agent checking for Facebook crawler
         $user_agent_lower = strtolower($user_agent);
+        
+        // If it claims to be Facebook but is accessing filter URLs, don't whitelist
+        if ((strpos($user_agent_lower, 'meta-externalagent') !== false || 
+             strpos($user_agent_lower, 'facebookexternalhit') !== false) &&
+            strpos($request_uri, 'filter_') !== false) {
+            return false; // Don't whitelist suspicious Facebook crawler behavior
+        }
+        
+        // Check whitelisted user agents
         foreach ($this->whitelist_cache['agents'] as $whitelisted_agent) {
             if (strpos($user_agent_lower, $whitelisted_agent) !== false) {
                 return true;
@@ -560,12 +599,36 @@ class BotBlackhole {
             }
         }
         
-        // IMPROVED: More intelligent rate limiting for legitimate users
+        // ENHANCED: Check for filter spam patterns
+        if (strpos($request_uri, 'filter_') !== false) {
+            $parsed_url = parse_url($request_uri);
+            if (isset($parsed_url['query'])) {
+                parse_str($parsed_url['query'], $query_params);
+                
+                // Count filter parameters
+                $filter_count = 0;
+                foreach ($query_params as $key => $value) {
+                    if (strpos($key, 'filter_') === 0) {
+                        $filter_count++;
+                        // Count comma-separated values
+                        $values = explode(',', $value);
+                        if (count($values) > 1) {
+                            $score += 20; // Multiple values in single filter
+                        }
+                    }
+                }
+                
+                if ($filter_count > 2) {
+                    $score += 30; // Too many filter types
+                }
+            }
+        }
+        
+        // FIXED: Much more lenient rate limiting - 200 requests per minute instead of 50
         $ip = $this->get_client_ip();
         $request_count = get_transient('bot_requests_' . md5($ip));
         
-        // FIXED: Much more lenient rate limiting - 100 requests per minute instead of 50
-        if ($request_count && $request_count > 100) {
+        if ($request_count && $request_count > 200) {
             $score += 30;
         }
         
@@ -835,7 +898,6 @@ slurp
 duckduckbot
 baiduspider
 yandexbot
-facebookexternalhit
 twitterbot
 linkedinbot
 pinterestbot

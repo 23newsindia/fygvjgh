@@ -157,16 +157,16 @@ class CustomSecurityPlugin {
             'security_enable_bot_blocking' => true,
             'security_waf_request_limit' => 100,
             'security_waf_blacklist_threshold' => 5,
-            // AGGRESSIVE SPAM PROTECTION - Very strict limits
-            'security_max_filter_colours' => 2,  // Max 2 colors
-            'security_max_filter_sizes' => 3,    // Max 3 sizes
-            'security_max_filter_brands' => 1,   // Max 1 brand
-            'security_max_total_filters' => 5,   // Max 5 total filters
-            'security_max_query_params' => 8,    // Max 8 query params
-            'security_max_query_length' => 300,  // Max 300 chars
+            // FIXED: UPDATED SPAM PROTECTION - Allow up to 6 colors and more lenient limits
+            'security_max_filter_colours' => 6,  // INCREASED: Max 6 colors
+            'security_max_filter_sizes' => 6,    // INCREASED: Max 6 sizes
+            'security_max_filter_brands' => 3,   // Keep brand limit at 3
+            'security_max_total_filters' => 12,  // INCREASED: Max 12 total filters
+            'security_max_query_params' => 8,    // Keep at 8 query params
+            'security_max_query_length' => 200,  // INCREASED: Max 200 chars (was 300)
             'security_cookie_notice_text' => 'This website uses cookies to ensure you get the best experience. By continuing to use this site, you consent to our use of cookies.',
             'security_bot_skip_logged_users' => true,
-            'security_bot_max_requests_per_minute' => 30,
+            'security_bot_max_requests_per_minute' => 200, // INCREASED: 200 requests per minute (was 30)
             'security_bot_block_threshold' => 5,
             'security_bot_block_message' => 'Access Denied - Bad Bot Detected',
             'security_bot_log_retention_days' => 30,
@@ -188,7 +188,12 @@ class CustomSecurityPlugin {
             'security_modsec_custom_410_page' => true,
             'security_modsec_whitelist_search_bots' => true,
             'security_modsec_log_blocked_requests' => true,
-            'security_modsec_custom_bad_bots' => 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot'
+            'security_modsec_custom_bad_bots' => 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot',
+            // FIXED: Updated ModSecurity limits to match new settings
+            'security_modsec_max_filter_colors' => 6,  // INCREASED: Allow 6 colors
+            'security_modsec_max_filter_sizes' => 6,   // INCREASED: Allow 6 sizes
+            'security_modsec_max_total_filters' => 12, // INCREASED: Allow 12 total filters
+            'security_modsec_max_query_length' => 200  // INCREASED: Allow 200 chars
         );
 
         foreach ($default_options as $option => $value) {

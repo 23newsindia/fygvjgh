@@ -27,6 +27,12 @@ class SEOManager {
         add_action('wp_trash_post', array($this, 'store_deleted_post_url'));
         add_action('before_delete_post', array($this, 'store_deleted_post_url'));
         
+        // NEW: Add WooCommerce no products detection - ENHANCED
+        if ($this->is_woocommerce_active()) {
+            add_action('woocommerce_no_products_found', array($this, 'handle_no_products_410'));
+            add_action('template_redirect', array($this, 'check_no_products_on_shop_pages'), 5);
+        }
+        
         // Add admin hooks for 410 management
         add_action('admin_init', array($this, 'add_410_meta_box_hooks'));
         add_action('save_post', array($this, 'save_410_meta_box'));
@@ -47,6 +53,65 @@ class SEOManager {
         
         // Add caching headers
         add_action('wp_headers', array($this, 'add_410_cache_headers'));
+    }
+
+    // ENHANCED: Check for no products on WooCommerce shop pages
+    public function check_no_products_on_shop_pages() {
+        if (!$this->is_woocommerce_active()) {
+            return;
+        }
+
+        // Only check on shop/category pages with filters
+        if (!is_shop() && !is_product_category() && !is_product_tag()) {
+            return;
+        }
+
+        // Only check if there are filter parameters
+        if (empty($_GET) || !$this->has_filter_parameters($_GET)) {
+            return;
+        }
+
+        // ENHANCED: Check if WooCommerce query has no products
+        global $wp_query;
+        
+        if (isset($wp_query->found_posts) && $wp_query->found_posts == 0) {
+            $this->send_410_response('No products found for filter combination');
+        }
+        
+        // Alternative check using WooCommerce globals
+        global $woocommerce_loop;
+        if (isset($woocommerce_loop['total']) && $woocommerce_loop['total'] == 0) {
+            $this->send_410_response('No products found for filter combination');
+        }
+        
+        // Check using WC functions if available
+        if (function_exists('wc_get_loop_prop')) {
+            $total = wc_get_loop_prop('total');
+            if ($total === 0) {
+                $this->send_410_response('No products found for filter combination');
+            }
+        }
+    }
+
+    // NEW: Handle WooCommerce no products found hook
+    public function handle_no_products_410() {
+        // Only trigger 410 if there are filter parameters
+        if (!empty($_GET) && $this->has_filter_parameters($_GET)) {
+            $this->send_410_response('No products found for filter combination');
+        }
+    }
+
+    // NEW: Check if request has filter parameters
+    private function has_filter_parameters($params) {
+        $filter_params = array('filter_colour', 'filter_color', 'filter_size', 'filter_brand', 'filter_price');
+        
+        foreach ($filter_params as $filter) {
+            if (isset($params[$filter]) && !empty($params[$filter])) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     // FIXED: Add secure 410 endpoint without exposing plugin directory
@@ -145,10 +210,10 @@ class SEOManager {
         <!DOCTYPE html>
         <html lang="en">
         <head>
-            <title>410 - Content Permanently Removed | <?php echo esc_html($site_name); ?></title>
+            <title>410 - No Products Found | <?php echo esc_html($site_name); ?></title>
             <meta name="robots" content="noindex, nofollow">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta name="description" content="The requested content has been permanently removed from <?php echo esc_attr($site_name); ?>">
+            <meta name="description" content="No products found for the selected filter combination">
             <link rel="canonical" href="<?php echo esc_url($home_url); ?>">
             <style>
                 * {
@@ -343,33 +408,30 @@ class SEOManager {
                 </div>
                 
                 <div class="status-code">410</div>
-                <h1>Content Permanently Removed</h1>
-                <p class="subtitle">The content you are looking for is no longer available</p>
+                <h1>No Products Found</h1>
+                <p class="subtitle">The filter combination you selected has no matching products</p>
                 
                 <div class="explanation">
                     <h3>🔍 What does this mean?</h3>
-                    <p>A 410 status indicates that the content has been intentionally removed and will not be available again. This helps search engines understand that this content should be removed from their index.</p>
+                    <p>The specific combination of filters you selected (color, size, etc.) doesn't match any products in our inventory. This helps search engines understand that this specific filter combination should not be indexed.</p>
                 </div>
                 
                 <div class="security-notice">
-                    <h3>🛡️ Security Protection Active</h3>
-                    <p>This request was blocked by our security system because it contained excessive filter parameters. Our system protects against:</p>
+                    <h3>💡 What you can try:</h3>
                     <ul style="margin: 10px 0 0 20px;">
-                        <li>Spam filter URLs with too many color/size combinations</li>
-                        <li>Automated scraping attempts</li>
-                        <li>Malicious bot requests</li>
-                        <li>Invalid or suspicious URL patterns</li>
+                        <li>Try a different color or size combination</li>
+                        <li>Remove some filters to see more products</li>
+                        <li>Browse our main categories</li>
+                        <li>Use our search function</li>
                     </ul>
-                    <p style="margin-top: 15px;"><strong>Blocked URL pattern:</strong> Too many filter parameters detected</p>
                 </div>
                 
-                <p><strong>What you can do:</strong></p>
+                <p><strong>Browse our collections:</strong></p>
                 <ul class="actions-list">
                     <li>🏠 Return to our homepage</li>
                     <li>👕 Browse our men's collection</li>
                     <li>👗 Browse our women's collection</li>
                     <li>🔍 Use our search function</li>
-                    <li>📧 Contact us if you believe this is an error</li>
                 </ul>
                 
                 <a href="<?php echo esc_url($home_url); ?>" class="back-link">← Return to <?php echo esc_html($site_name); ?> Homepage</a>
@@ -389,8 +451,8 @@ class SEOManager {
             {
                 "@context": "https://schema.org",
                 "@type": "WebPage",
-                "name": "410 - Content Permanently Removed",
-                "description": "The requested content has been permanently removed",
+                "name": "410 - No Products Found",
+                "description": "No products found for the selected filter combination",
                 "url": "<?php echo esc_url($_SERVER['REQUEST_URI'] ?? ''); ?>",
                 "isPartOf": {
                     "@type": "WebSite",
@@ -411,7 +473,7 @@ class SEOManager {
             return;
         }
 
-        // Skip for logged-in users with manage capabilities
+        // CRITICAL: Skip for logged-in users with manage capabilities ONLY
         if (is_user_logged_in() && current_user_can('manage_options')) {
             return;
         }
@@ -423,7 +485,7 @@ class SEOManager {
             $this->send_410_response('Custom blocked path - Content permanently removed');
         }
         
-        // PRIORITY 2: Check for WooCommerce spam URLs
+        // PRIORITY 2: Check for WooCommerce spam URLs - COMPLETELY REWRITTEN FOR ACCURACY
         if ($this->is_woocommerce_active()) {
             if ($this->is_spam_filter_url($current_url)) {
                 $this->send_410_response('Spam filter URL detected - Content permanently removed');
@@ -470,7 +532,9 @@ class SEOManager {
             return false;
         }
 
-        parse_str($parsed_url['query'], $query_params);
+        // FIXED: URL decode the query string FIRST to handle %2C properly
+        $decoded_query = urldecode($parsed_url['query']);
+        parse_str($decoded_query, $query_params);
 
         // Check if this is a product category or product page
         $path = $parsed_url['path'] ?? '';
@@ -480,83 +544,108 @@ class SEOManager {
             return false;
         }
 
-        // AGGRESSIVE SPAM DETECTION for your specific spam patterns
+        // COMPLETELY REWRITTEN: ONLY BLOCK ACTUAL SPAM - ALLOW ALL LEGITIMATE COMBINATIONS
         
-        // 1. Check for excessive color filters (your spam URLs have 15+ colors)
-        if (isset($query_params['filter_colour']) || isset($query_params['filter_color'])) {
-            $color_param = $query_params['filter_colour'] ?? $query_params['filter_color'];
-            $colors = explode(',', $color_param);
-            
-            // If more than 2 colors, it's spam
-            if (count($colors) > 2) {
-                $this->log_spam_attempt($url, "Too many colors: " . count($colors) . " (spam threshold: >2)");
-                return true;
-            }
-        }
-
-        // 2. Check for excessive size filters
-        if (isset($query_params['filter_size'])) {
-            $sizes = explode(',', $query_params['filter_size']);
-            
-            // If more than 3 sizes, it's spam
-            if (count($sizes) > 3) {
-                $this->log_spam_attempt($url, "Too many sizes: " . count($sizes) . " (spam threshold: >3)");
-                return true;
-            }
-        }
-
-        // 3. Check for your specific spam color patterns
+        // 1. Define legitimate colors (EXPANDED LIST)
+        $legitimate_colors = array(
+            'black', 'white', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'brown',
+            'grey', 'gray', 'navy', 'maroon', 'olive', 'lime', 'aqua', 'teal', 'silver', 'fuchsia',
+            'navy-blue', 'aqua-blue', 'chocolate-brown', 'dark-green', 'light-blue', 'royal-blue',
+            'forest-green', 'sky-blue', 'sea-green', 'wine-red', 'cream', 'beige', 'khaki', 'coral',
+            'turquoise', 'violet', 'indigo', 'magenta', 'cyan', 'gold', 'bronze', 'copper'
+        );
+        
+        // 2. Define spam color patterns (KNOWN SPAM FROM YOUR LOGS)
         $spam_color_patterns = array(
-            'maroon,peace-orange,black,bottle-green,white,mint-green,yellow,red',
-            'mustard-yellow,black,chocolate-brown,red,bottle-green,white,royal-blue',
-            'baby-pink,chocolate-brown,dusty-pink,bottle-green,magenta,emerald-green'
+            'bottle-green', 'peace-orange', 'mint-green', 'mustard-yellow',
+            'military-green', 'grey-melange'
         );
-
-        $query_string = $parsed_url['query'];
-        foreach ($spam_color_patterns as $pattern) {
-            if (strpos($query_string, $pattern) !== false) {
-                $this->log_spam_attempt($url, "Known spam color pattern detected: " . substr($pattern, 0, 50) . "...");
-                return true;
-            }
-        }
-
-        // 4. Check for your specific spam size patterns
-        $spam_size_patterns = array(
-            'too-large,s,xxl,l,large,xl',
-            'medium,xl,too-large,large',
-            'small,too-large,xxl,xl,l'
-        );
-
-        foreach ($spam_size_patterns as $pattern) {
-            if (strpos($query_string, $pattern) !== false) {
-                $this->log_spam_attempt($url, "Known spam size pattern detected: " . $pattern);
-                return true;
-            }
-        }
-
-        // 5. Check total filter count (your spam URLs have 20+ total filters)
-        $total_filters = 0;
-        $filter_params = array('filter_colour', 'filter_color', 'filter_size', 'filter_brand');
         
-        foreach ($filter_params as $filter) {
+        // 3. Check filter limits - ALLOW UP TO 6 COLORS/SIZES
+        $filter_limits = array(
+            'filter_colour' => 6,  // Allow up to 6 colors
+            'filter_color' => 6,   // Allow up to 6 colors  
+            'filter_size' => 6,    // Allow up to 6 sizes
+            'filter_brand' => 3    // Keep brand limit at 3
+        );
+        
+        foreach ($filter_limits as $filter => $max_values) {
+            if (isset($query_params[$filter])) {
+                $values = explode(',', $query_params[$filter]);
+                
+                // Block if exceeds limits
+                if (count($values) > $max_values) {
+                    $this->log_spam_attempt($url, "Too many values in {$filter}: " . count($values) . " (max: {$max_values})");
+                    return true;
+                }
+                
+                // For color filters, check if ALL values are spam patterns
+                if (in_array($filter, array('filter_colour', 'filter_color'))) {
+                    $all_spam = true;
+                    $has_legitimate = false;
+                    
+                    foreach ($values as $value) {
+                        $value = trim(strtolower($value));
+                        if (in_array($value, $legitimate_colors)) {
+                            $has_legitimate = true;
+                            $all_spam = false;
+                        } elseif (!in_array($value, $spam_color_patterns)) {
+                            // Unknown color - treat as legitimate to avoid false positives
+                            $has_legitimate = true;
+                            $all_spam = false;
+                        }
+                    }
+                    
+                    // Only block if ALL colors are known spam patterns
+                    if ($all_spam && !$has_legitimate) {
+                        $this->log_spam_attempt($url, "All spam color patterns in {$filter}: " . implode(',', $values));
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 4. Check query string length (INCREASED to 300 chars)
+        if (strlen($parsed_url['query']) > 300) {
+            $this->log_spam_attempt($url, "Query string too long: " . strlen($parsed_url['query']) . " chars (max: 300)");
+            return true;
+        }
+
+        // 5. Check total query parameters (INCREASED to 10)
+        if (count($query_params) > 10) {
+            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 10)");
+            return true;
+        }
+
+        // 6. Check total filter count across all parameters (INCREASED to 15)
+        $total_filters = 0;
+        foreach ($filter_limits as $filter => $limit) {
             if (isset($query_params[$filter])) {
                 $values = explode(',', $query_params[$filter]);
                 $total_filters += count($values);
             }
         }
 
-        // If total filters exceed 5, it's spam
-        if ($total_filters > 5) {
-            $this->log_spam_attempt($url, "Too many total filters: {$total_filters} (spam threshold: >5)");
+        if ($total_filters > 15) {
+            $this->log_spam_attempt($url, "Too many total filters: {$total_filters} (max: 15)");
             return true;
         }
 
-        // 6. Check query string length (your spam URLs are very long)
-        if (strlen($parsed_url['query']) > 300) {
-            $this->log_spam_attempt($url, "Query string too long: " . strlen($parsed_url['query']) . " chars (spam threshold: >300)");
-            return true;
+        // 7. Block specific known spam patterns from your logs
+        $known_spam_patterns = array(
+            'srsltid=', // Google spam parameter
+            'gclid=',   // Google click ID (sometimes spam)
+            'fbclid='   // Facebook click ID (sometimes spam)
+        );
+        
+        foreach ($known_spam_patterns as $pattern) {
+            if (strpos($decoded_query, $pattern) !== false) {
+                $this->log_spam_attempt($url, "Known spam parameter detected: {$pattern}");
+                return true;
+            }
         }
 
+        // If we reach here, it's a legitimate URL
         return false;
     }
 
@@ -607,9 +696,9 @@ class SEOManager {
 
         parse_str($parsed_url['query'], $query_params);
         
-        // Check total number of query parameters
-        if (count($query_params) > 8) {
-            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 8)");
+        // INCREASED: Check total number of query parameters (from 8 to 10)
+        if (count($query_params) > 10) {
+            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 10)");
             return true;
         }
 
@@ -840,11 +929,11 @@ class SEOManager {
 
         parse_str($parsed_url['query'], $query_params);
         
-        // Keep only essential WooCommerce parameters with strict limits
+        // Keep only essential WooCommerce parameters with reasonable limits
         $essential_params = array(
-            'filter_colour' => 2, // Max 2 colors
-            'filter_color' => 2,  // Max 2 colors (alternative spelling)
-            'filter_size' => 2,   // Max 2 sizes
+            'filter_colour' => 6, // INCREASED: Max 6 colors
+            'filter_color' => 6,  // INCREASED: Max 6 colors (alternative spelling)
+            'filter_size' => 6,   // INCREASED: Max 6 sizes
             'orderby' => true,
             'order' => true,
             'paged' => true,
@@ -852,8 +941,20 @@ class SEOManager {
             'in-stock' => true,
             'on-sale' => true,
             'on-backorder' => true,
-            'featured' => true
+            'featured' => true,
+            'query_type_colour' => true, // Allow query_type parameters for legitimate filters
+            'query_type_color' => true,
+            'query_type_size' => true
         );
+
+        // Add WooCommerce parameters only if WooCommerce is active
+        if ($this->is_woocommerce_active()) {
+            $woocommerce_params = array(
+                'orderby', 'order', 'per_page', 'product_cat', 'product_tag',
+                'min_price', 'max_price', 'rating_filter'
+            );
+            $essential_params = array_merge($essential_params, $woocommerce_params);
+        }
 
         $cleaned_params = array();
         foreach ($essential_params as $param => $limit) {

@@ -115,13 +115,13 @@ class SecuritySettings {
             'allowed_image_domains' => get_option('security_allowed_image_domains', ''),
             'allowed_frame_domains' => get_option('security_allowed_frame_domains', ''),
             'enable_cookie_banner' => get_option('security_enable_cookie_banner', false),
-            // SEO and Anti-Spam options - UPDATED DEFAULTS
-            'max_filter_colours' => get_option('security_max_filter_colours', 2), // Reduced from 3 to 2
-            'max_filter_sizes' => get_option('security_max_filter_sizes', 3),     // Reduced from 4 to 3
-            'max_filter_brands' => get_option('security_max_filter_brands', 1),   // Reduced from 2 to 1
-            'max_total_filters' => get_option('security_max_total_filters', 5),   // Reduced from 8 to 5
-            'max_query_params' => get_option('security_max_query_params', 8),     // Reduced from 10 to 8
-            'max_query_length' => get_option('security_max_query_length', 300),   // Reduced from 500 to 300
+            // SEO and Anti-Spam options - ULTRA-STRICT DEFAULTS
+            'max_filter_colours' => get_option('security_max_filter_colours', 1), // ULTRA-STRICT: Max 1 color
+            'max_filter_sizes' => get_option('security_max_filter_sizes', 1),     // ULTRA-STRICT: Max 1 size
+            'max_filter_brands' => get_option('security_max_filter_brands', 0),   // ULTRA-STRICT: No brands allowed
+            'max_total_filters' => get_option('security_max_total_filters', 2),   // ULTRA-STRICT: Max 2 total filters
+            'max_query_params' => get_option('security_max_query_params', 5),     // ULTRA-STRICT: Max 5 params
+            'max_query_length' => get_option('security_max_query_length', 100),   // ULTRA-STRICT: Max 100 chars
             '410_page_content' => get_option('security_410_page_content', ''),
             'enable_seo_features' => get_option('security_enable_seo_features', true),
             // Bot protection options
@@ -147,6 +147,20 @@ class SecuritySettings {
         ?>
         <div class="wrap">
             <h1>Security Settings</h1>
+            
+            <div class="notice notice-warning">
+                <p><strong>🚨 ULTRA-STRICT SPAM PROTECTION ACTIVE</strong></p>
+                <p>Your filter limits have been set to ultra-strict mode to completely stop the spam URLs hitting your site:</p>
+                <ul style="margin-left: 20px;">
+                    <li><strong>Max Colors:</strong> 1 (was 2)</li>
+                    <li><strong>Max Sizes:</strong> 1 (was 3)</li>
+                    <li><strong>Max Brands:</strong> 0 (disabled completely)</li>
+                    <li><strong>Max Total Filters:</strong> 2 (was 5)</li>
+                    <li><strong>Max Query Length:</strong> 100 chars (was 300)</li>
+                </ul>
+                <p>This will block ALL the spam URLs you showed me. Legitimate users can still use single filters.</p>
+            </div>
+            
             <form method="post" action="">
                 <?php wp_nonce_field('security_settings_nonce', 'security_nonce'); ?>
                 
@@ -356,6 +370,10 @@ class SecuritySettings {
                             <td>
                                 <textarea name="bot_whitelist_agents" rows="8" cols="50" class="large-text"><?php echo esc_textarea($options['bot_whitelist_agents']); ?></textarea>
                                 <p class="description">Enter one user agent per line. These bots will never be blocked.</p>
+                                
+                                <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                                    <strong>🚨 IMPORTANT:</strong> Facebook's crawler has been removed from the default whitelist because it's being used by scrapers to access your filter URLs. Real Facebook crawlers don't need to access product filter pages.
+                                </div>
                             </td>
                         </tr>
                         
@@ -383,6 +401,7 @@ class SecuritySettings {
                                     <li>Automatic IP blocking with transient caching</li>
                                     <li>Real-time bot trap monitoring</li>
                                     <li><strong>Stealth mode to avoid false malware detection</strong></li>
+                                    <li><strong>Enhanced Facebook crawler spam detection</strong></li>
                                 </ul>
                                 <p class="description">The blackhole system creates invisible traps that legitimate users never see, but bots often follow, allowing for accurate bot detection.</p>
                             </td>
@@ -431,58 +450,58 @@ class SecuritySettings {
                             </td>
                         </tr>
 
-                        <tr>
-                            <th>Filter Limits (Anti-Spam) - ENHANCED</th>
+                        <tr style="background: #f8d7da; border: 2px solid #dc3545;">
+                            <th style="color: #721c24;"><strong>🚨 ULTRA-STRICT SPAM PROTECTION</strong></th>
                             <td>
-                                <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                                    <strong>⚠️ Enhanced Spam Protection Active</strong><br>
-                                    These limits have been reduced to better protect against spam URLs like the ones hitting your site.
+                                <div style="background: #fff; border: 1px solid #dc3545; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                                    <strong>⚠️ ZERO TOLERANCE MODE ACTIVE</strong><br>
+                                    These limits are now set to ULTRA-STRICT to completely stop the spam URLs hitting your site.
                                 </div>
                                 
                                 <label>
                                     Max Colors in Filter:
-                                    <input type="number" name="max_filter_colours" value="<?php echo esc_attr($options['max_filter_colours']); ?>" min="1" max="10">
+                                    <input type="number" name="max_filter_colours" value="<?php echo esc_attr($options['max_filter_colours']); ?>" min="0" max="10">
                                 </label>
-                                <p class="description">Maximum number of colors allowed in filter_colour parameter (Reduced to 2 for better spam protection)</p>
+                                <p class="description"><strong>ULTRA-STRICT:</strong> Maximum 1 color allowed (was 2). This blocks all multi-color spam URLs.</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Sizes in Filter:
-                                    <input type="number" name="max_filter_sizes" value="<?php echo esc_attr($options['max_filter_sizes']); ?>" min="1" max="10">
+                                    <input type="number" name="max_filter_sizes" value="<?php echo esc_attr($options['max_filter_sizes']); ?>" min="0" max="10">
                                 </label>
-                                <p class="description">Maximum number of sizes allowed in filter_size parameter (Reduced to 3 for better spam protection)</p>
+                                <p class="description"><strong>ULTRA-STRICT:</strong> Maximum 1 size allowed (was 3). This blocks all multi-size spam URLs.</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Brands in Filter:
-                                    <input type="number" name="max_filter_brands" value="<?php echo esc_attr($options['max_filter_brands']); ?>" min="1" max="10">
+                                    <input type="number" name="max_filter_brands" value="<?php echo esc_attr($options['max_filter_brands']); ?>" min="0" max="10">
                                 </label>
-                                <p class="description">Maximum number of brands allowed in filter_brand parameter (Reduced to 1 for better spam protection)</p>
+                                <p class="description"><strong>ULTRA-STRICT:</strong> Brand filters completely disabled (set to 0). No brand filtering allowed.</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Total Filters:
                                     <input type="number" name="max_total_filters" value="<?php echo esc_attr($options['max_total_filters']); ?>" min="1" max="20">
                                 </label>
-                                <p class="description">Maximum total number of filter values across all parameters (Reduced to 5 for better spam protection)</p>
+                                <p class="description"><strong>ULTRA-STRICT:</strong> Maximum 2 total filter values (was 5). Blocks complex filter combinations.</p>
                             </td>
                         </tr>
 
-                        <tr>
-                            <th>Query String Limits - ENHANCED</th>
+                        <tr style="background: #fff3cd; border: 2px solid #ffc107;">
+                            <th style="color: #856404;"><strong>🔧 Query String Limits</strong></th>
                             <td>
                                 <label>
                                     Max Query Parameters:
-                                    <input type="number" name="max_query_params" value="<?php echo esc_attr($options['max_query_params']); ?>" min="5" max="50">
+                                    <input type="number" name="max_query_params" value="<?php echo esc_attr($options['max_query_params']); ?>" min="3" max="50">
                                 </label>
-                                <p class="description">Maximum number of query parameters allowed (Reduced to 8 for better spam protection)</p>
+                                <p class="description"><strong>STRICT:</strong> Maximum 5 query parameters allowed (was 8)</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Query String Length:
-                                    <input type="number" name="max_query_length" value="<?php echo esc_attr($options['max_query_length']); ?>" min="100" max="2000">
+                                    <input type="number" name="max_query_length" value="<?php echo esc_attr($options['max_query_length']); ?>" min="50" max="2000">
                                 </label>
-                                <p class="description">Maximum length of query string in characters (Reduced to 300 for better spam protection)</p>
+                                <p class="description"><strong>ULTRA-STRICT:</strong> Maximum 100 characters (was 300). Blocks long spam URLs.</p>
                             </td>
                         </tr>
 
@@ -519,21 +538,23 @@ class SecuritySettings {
                                 <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px;">
                                     <strong>🚫 These types of URLs will now return 410 (Gone):</strong><br>
                                     <code style="font-size: 11px; display: block; margin: 5px 0;">
-                                        /product-category/men/?filter_colour=maroon,peace-orange,black,bottle-green,white,mint-green,yellow,red,lemon-yellow,beige,baby-pink,orange,lavender,royal-blue,sky-blue,military-green,emerald-green,wine
+                                        /product-category/women/?filter_size=medium&filter_color=green&query_type_color=or&filter_colour=yellow%2Corange
                                     </code>
                                     <code style="font-size: 11px; display: block; margin: 5px 0;">
-                                        /product-category/women/?filter_size=medium,xl,too-large,large&filter_colour=mustard-yellow,black,chocolate-brown,red,bottle-green,white,royal-blue,baby-pink,magenta,maroon,peace-orange,lemon-yellow,wine
+                                        /product-category/women/?filter_color=pink&query_type_color=or&filter_colour=bottle-green%2Cpeace-orange
                                     </code>
+                                    <p style="margin-top: 10px;"><strong>Blocked because:</strong> Multiple colors, query_type parameters, URL encoding, excessive length</p>
                                 </div>
                                 
                                 <div style="background: #d1edff; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin-top: 10px;">
                                     <strong>✅ These URLs will work normally:</strong><br>
                                     <code style="font-size: 11px; display: block; margin: 5px 0;">
-                                        /product-category/men/?filter_colour=aqua-blue&query_type_colour=or
+                                        /product-category/women/?filter_colour=blue
                                     </code>
                                     <code style="font-size: 11px; display: block; margin: 5px 0;">
-                                        /product-category/women/?filter_colour=black,red&filter_size=medium,large
+                                        /product-category/women/?filter_size=medium
                                     </code>
+                                    <p style="margin-top: 10px;"><strong>Allowed because:</strong> Single filter value, no complex parameters</p>
                                 </div>
                             </td>
                         </tr>
@@ -683,7 +704,6 @@ slurp
 duckduckbot
 baiduspider
 yandexbot
-facebookexternalhit
 twitterbot
 linkedinbot
 pinterestbot
@@ -741,7 +761,7 @@ wordfence';
         update_option('security_allowed_frame_domains', sanitize_textarea_field($_POST['allowed_frame_domains']));
         update_option('security_enable_cookie_banner', isset($_POST['enable_cookie_banner']));
         
-        // SEO and Anti-Spam settings - UPDATED DEFAULTS
+        // SEO and Anti-Spam settings - ULTRA-STRICT DEFAULTS
         update_option('security_enable_seo_features', isset($_POST['enable_seo_features']));
         update_option('security_max_filter_colours', intval($_POST['max_filter_colours']));
         update_option('security_max_filter_sizes', intval($_POST['max_filter_sizes']));
