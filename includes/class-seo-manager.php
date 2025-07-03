@@ -544,80 +544,102 @@ class SEOManager {
             return false;
         }
 
-        // COMPLETELY REWRITTEN: ONLY BLOCK ACTUAL SPAM - ALLOW ALL LEGITIMATE COMBINATIONS
+        // COMPLETELY REWRITTEN: ALLOW ALL LEGITIMATE COLORS - NO BLOCKING OF REAL COLORS
         
-        // 1. Define legitimate colors (EXPANDED LIST)
+        // 1. Define ALL legitimate colors (MASSIVE EXPANDED LIST)
         $legitimate_colors = array(
+            // Basic colors
             'black', 'white', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'brown',
             'grey', 'gray', 'navy', 'maroon', 'olive', 'lime', 'aqua', 'teal', 'silver', 'fuchsia',
+            
+            // Extended basic colors
             'navy-blue', 'aqua-blue', 'chocolate-brown', 'dark-green', 'light-blue', 'royal-blue',
             'forest-green', 'sky-blue', 'sea-green', 'wine-red', 'cream', 'beige', 'khaki', 'coral',
-            'turquoise', 'violet', 'indigo', 'magenta', 'cyan', 'gold', 'bronze', 'copper'
+            'turquoise', 'violet', 'indigo', 'magenta', 'cyan', 'gold', 'bronze', 'copper',
+            
+            // FIXED: Add ALL your actual product colors
+            'emerald-green', 'grey-melange', 'lavender', 'mint-green', 'sage-green', 'olive-green',
+            'bottle-green', 'peace-orange', 'mustard-yellow', 'military-green', 'forest-green',
+            'sea-green', 'lime-green', 'neon-green', 'dark-green', 'light-green', 'bright-green',
+            
+            // Fashion colors
+            'rose-gold', 'champagne', 'burgundy', 'mauve', 'taupe', 'ivory', 'pearl', 'charcoal',
+            'slate', 'stone', 'sand', 'rust', 'terracotta', 'salmon', 'peach', 'apricot',
+            'blush', 'dusty-rose', 'powder-blue', 'baby-blue', 'periwinkle', 'lilac',
+            
+            // Trendy colors
+            'millennial-pink', 'gen-z-yellow', 'classic-blue', 'living-coral', 'ultra-violet',
+            'greenery', 'rose-quartz', 'serenity', 'marsala', 'radiant-orchid', 'emerald',
+            'tangerine-tango', 'honeysuckle', 'turquoise', 'mimosa', 'blue-iris',
+            
+            // Melange and mixed colors
+            'black-melange', 'white-melange', 'blue-melange', 'red-melange', 'green-melange',
+            'yellow-melange', 'orange-melange', 'purple-melange', 'pink-melange', 'brown-melange',
+            
+            // Multi-word colors
+            'off-white', 'jet-black', 'snow-white', 'fire-red', 'electric-blue', 'neon-yellow',
+            'hot-pink', 'deep-purple', 'bright-orange', 'dark-brown', 'light-grey', 'dark-grey'
         );
         
-        // 2. Define spam color patterns (KNOWN SPAM FROM YOUR LOGS)
-        $spam_color_patterns = array(
-            'bottle-green', 'peace-orange', 'mint-green', 'mustard-yellow',
-            'military-green', 'grey-melange'
+        // 2. ONLY block if there are OBVIOUS spam patterns - NOT real colors
+        $obvious_spam_patterns = array(
+            // Only block if it contains obvious non-color spam
+            'srsltid', 'gclid', 'fbclid', 'utm_', '_ga', '_gid', 'sessionid', 'userid',
+            // Only block if it's clearly not a color (numbers, special chars, etc.)
+            'color123', 'test123', 'spam123', 'bot123', 'hack123'
         );
         
-        // 3. Check filter limits - ALLOW UP TO 6 COLORS/SIZES
+        // 3. Check filter limits - INCREASED TO BE MORE PERMISSIVE
         $filter_limits = array(
-            'filter_colour' => 6,  // Allow up to 6 colors
-            'filter_color' => 6,   // Allow up to 6 colors  
-            'filter_size' => 6,    // Allow up to 6 sizes
-            'filter_brand' => 3    // Keep brand limit at 3
+            'filter_colour' => 10,  // INCREASED: Allow up to 10 colors
+            'filter_color' => 10,   // INCREASED: Allow up to 10 colors  
+            'filter_size' => 10,    // INCREASED: Allow up to 10 sizes
+            'filter_brand' => 5     // INCREASED: Allow up to 5 brands
         );
         
         foreach ($filter_limits as $filter => $max_values) {
             if (isset($query_params[$filter])) {
                 $values = explode(',', $query_params[$filter]);
                 
-                // Block if exceeds limits
+                // Block ONLY if exceeds very high limits
                 if (count($values) > $max_values) {
                     $this->log_spam_attempt($url, "Too many values in {$filter}: " . count($values) . " (max: {$max_values})");
                     return true;
                 }
                 
-                // For color filters, check if ALL values are spam patterns
+                // For color filters, check for OBVIOUS spam only
                 if (in_array($filter, array('filter_colour', 'filter_color'))) {
-                    $all_spam = true;
-                    $has_legitimate = false;
-                    
                     foreach ($values as $value) {
                         $value = trim(strtolower($value));
-                        if (in_array($value, $legitimate_colors)) {
-                            $has_legitimate = true;
-                            $all_spam = false;
-                        } elseif (!in_array($value, $spam_color_patterns)) {
-                            // Unknown color - treat as legitimate to avoid false positives
-                            $has_legitimate = true;
-                            $all_spam = false;
+                        
+                        // Check for obvious spam patterns
+                        foreach ($obvious_spam_patterns as $spam_pattern) {
+                            if (strpos($value, $spam_pattern) !== false) {
+                                $this->log_spam_attempt($url, "Obvious spam pattern in color: {$value}");
+                                return true;
+                            }
                         }
-                    }
-                    
-                    // Only block if ALL colors are known spam patterns
-                    if ($all_spam && !$has_legitimate) {
-                        $this->log_spam_attempt($url, "All spam color patterns in {$filter}: " . implode(',', $values));
-                        return true;
+                        
+                        // REMOVED: No longer block based on "unknown" colors
+                        // All colors are now considered legitimate unless obviously spam
                     }
                 }
             }
         }
 
-        // 4. Check query string length (INCREASED to 300 chars)
-        if (strlen($parsed_url['query']) > 300) {
-            $this->log_spam_attempt($url, "Query string too long: " . strlen($parsed_url['query']) . " chars (max: 300)");
+        // 4. Check query string length (INCREASED to 500 chars)
+        if (strlen($parsed_url['query']) > 500) {
+            $this->log_spam_attempt($url, "Query string too long: " . strlen($parsed_url['query']) . " chars (max: 500)");
             return true;
         }
 
-        // 5. Check total query parameters (INCREASED to 10)
-        if (count($query_params) > 10) {
-            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 10)");
+        // 5. Check total query parameters (INCREASED to 15)
+        if (count($query_params) > 15) {
+            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 15)");
             return true;
         }
 
-        // 6. Check total filter count across all parameters (INCREASED to 15)
+        // 6. Check total filter count across all parameters (INCREASED to 25)
         $total_filters = 0;
         foreach ($filter_limits as $filter => $limit) {
             if (isset($query_params[$filter])) {
@@ -626,26 +648,30 @@ class SEOManager {
             }
         }
 
-        if ($total_filters > 15) {
-            $this->log_spam_attempt($url, "Too many total filters: {$total_filters} (max: 15)");
+        if ($total_filters > 25) {
+            $this->log_spam_attempt($url, "Too many total filters: {$total_filters} (max: 25)");
             return true;
         }
 
-        // 7. Block specific known spam patterns from your logs
-        $known_spam_patterns = array(
+        // 7. Block specific known spam parameters (NOT colors)
+        $known_spam_parameters = array(
             'srsltid=', // Google spam parameter
-            'gclid=',   // Google click ID (sometimes spam)
-            'fbclid='   // Facebook click ID (sometimes spam)
+            'sessionid=', // Session hijacking attempts
+            'userid=', // User ID manipulation
+            'admin=', // Admin access attempts
+            'debug=', // Debug mode attempts
+            'test=123', // Test parameters
+            'hack=', // Obvious hacking attempts
         );
         
-        foreach ($known_spam_patterns as $pattern) {
+        foreach ($known_spam_parameters as $pattern) {
             if (strpos($decoded_query, $pattern) !== false) {
                 $this->log_spam_attempt($url, "Known spam parameter detected: {$pattern}");
                 return true;
             }
         }
 
-        // If we reach here, it's a legitimate URL
+        // If we reach here, it's a legitimate URL with real colors
         return false;
     }
 
@@ -696,9 +722,9 @@ class SEOManager {
 
         parse_str($parsed_url['query'], $query_params);
         
-        // INCREASED: Check total number of query parameters (from 8 to 10)
-        if (count($query_params) > 10) {
-            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 10)");
+        // INCREASED: Check total number of query parameters (from 10 to 15)
+        if (count($query_params) > 15) {
+            $this->log_spam_attempt($url, "Too many query parameters: " . count($query_params) . " (max: 15)");
             return true;
         }
 
@@ -931,9 +957,9 @@ class SEOManager {
         
         // Keep only essential WooCommerce parameters with reasonable limits
         $essential_params = array(
-            'filter_colour' => 6, // INCREASED: Max 6 colors
-            'filter_color' => 6,  // INCREASED: Max 6 colors (alternative spelling)
-            'filter_size' => 6,   // INCREASED: Max 6 sizes
+            'filter_colour' => 10, // INCREASED: Max 10 colors
+            'filter_color' => 10,  // INCREASED: Max 10 colors (alternative spelling)
+            'filter_size' => 10,   // INCREASED: Max 10 sizes
             'orderby' => true,
             'order' => true,
             'paged' => true,

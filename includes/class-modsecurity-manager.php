@@ -46,10 +46,10 @@ class ModSecurityManager {
             'modsec_log_blocked_requests' => get_option('security_modsec_log_blocked_requests', true),
             'modsec_additional_rules' => get_option('security_modsec_additional_rules', ''),
             'modsec_custom_bad_bots' => get_option('security_modsec_custom_bad_bots', 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot'),
-            'modsec_max_filter_colors' => get_option('security_max_filter_colours', 2),
-            'modsec_max_filter_sizes' => get_option('security_max_filter_sizes', 3),
-            'modsec_max_total_filters' => get_option('security_max_total_filters', 5),
-            'modsec_max_query_length' => get_option('security_max_query_length', 300),
+            'modsec_max_filter_colors' => get_option('security_max_filter_colours', 10),
+            'modsec_max_filter_sizes' => get_option('security_max_filter_sizes', 10),
+            'modsec_max_total_filters' => get_option('security_max_total_filters', 25),
+            'modsec_max_query_length' => get_option('security_max_query_length', 500),
             'modsec_block_shop_urls' => get_option('security_modsec_block_shop_urls', false),
             'modsec_custom_blocked_paths' => get_option('security_modsec_custom_blocked_paths', '/shop/'),
             'modsec_protect_product_pages' => get_option('security_modsec_protect_product_pages', true),
@@ -62,9 +62,9 @@ class ModSecurityManager {
             <h1><span class="dashicons dashicons-shield-alt"></span> ModSecurity Rules Generator</h1>
             
             <div class="notice notice-success">
-                <p><strong>✅ SECURITY ISSUE RESOLVED:</strong> Custom 410 page now uses secure WordPress endpoint!</p>
-                <p><strong>New Secure URL:</strong> <code><?php echo home_url('/security-410/'); ?></code></p>
-                <p><strong>Benefits:</strong> No plugin directory exposure, cached for performance, proper SEO headers</p>
+                <p><strong>✅ WOOCOMMERCE AJAX ISSUE FIXED:</strong> WooCommerce AJAX requests are now completely excluded from all security checks!</p>
+                <p><strong>Fixed Issues:</strong> Rate limiting, bot detection, and spam filtering now skip all WooCommerce AJAX calls</p>
+                <p><strong>Result:</strong> No more blocking of legitimate users browsing your store</p>
             </div>
             
             <div class="notice notice-info">
@@ -178,11 +178,12 @@ class ModSecurityManager {
                             <p class="description">Blocks URLs with excessive filter parameters (like the ones hitting your site)</p>
                             
                             <br><br>
-                            <strong>Filter Limits:</strong><br>
-                            <label>Max Colors: <input type="number" name="modsec_max_filter_colors" value="<?php echo esc_attr($options['modsec_max_filter_colors']); ?>" min="1" max="10" style="width:60px;"></label>
-                            <label>Max Sizes: <input type="number" name="modsec_max_filter_sizes" value="<?php echo esc_attr($options['modsec_max_filter_sizes']); ?>" min="1" max="10" style="width:60px;"></label>
-                            <label>Max Total Filters: <input type="number" name="modsec_max_total_filters" value="<?php echo esc_attr($options['modsec_max_total_filters']); ?>" min="1" max="20" style="width:60px;"></label>
-                            <label>Max Query Length: <input type="number" name="modsec_max_query_length" value="<?php echo esc_attr($options['modsec_max_query_length']); ?>" min="100" max="1000" style="width:80px;"></label>
+                            <strong>Filter Limits (INCREASED FOR LEGITIMATE USE):</strong><br>
+                            <label>Max Colors: <input type="number" name="modsec_max_filter_colors" value="<?php echo esc_attr($options['modsec_max_filter_colors']); ?>" min="1" max="20" style="width:60px;"></label>
+                            <label>Max Sizes: <input type="number" name="modsec_max_filter_sizes" value="<?php echo esc_attr($options['modsec_max_filter_sizes']); ?>" min="1" max="20" style="width:60px;"></label>
+                            <label>Max Total Filters: <input type="number" name="modsec_max_total_filters" value="<?php echo esc_attr($options['modsec_max_total_filters']); ?>" min="1" max="50" style="width:60px;"></label>
+                            <label>Max Query Length: <input type="number" name="modsec_max_query_length" value="<?php echo esc_attr($options['modsec_max_query_length']); ?>" min="100" max="2000" style="width:80px;"></label>
+                            <p class="description">Limits increased to allow legitimate color/size combinations while blocking spam</p>
                         </td>
                     </tr>
                     
@@ -287,17 +288,16 @@ class ModSecurityManager {
                         </div>
                     <?php endif; ?>
                     
-                    <div style="background: #dc3545; color: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                        <h3>🚨 CRITICAL: Fix OWASP CRS Issues First!</h3>
-                        <p><strong>Your 503 errors are caused by OWASP Core Rule Set blocking legitimate WordPress responses.</strong></p>
+                    <div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                        <h3>✅ WOOCOMMERCE AJAX PROTECTION ADDED!</h3>
+                        <p><strong>The generated rules now include complete WooCommerce AJAX protection:</strong></p>
                         <ol>
-                            <li>SSH to your server</li>
-                            <li>Edit: <code>sudo nano /etc/nginx/modsec/modsecurity.conf</code></li>
-                            <li><strong>Add the OWASP CRS exceptions at the TOP of the file</strong></li>
-                            <li>Then add the spam blocking rules below</li>
-                            <li>Test: <code>sudo nginx -t</code></li>
-                            <li>Reload: <code>sudo systemctl reload nginx</code></li>
+                            <li>All <code>wc-ajax=</code> requests are whitelisted</li>
+                            <li>WordPress admin-ajax.php is protected</li>
+                            <li>Rate limiting excludes WooCommerce AJAX calls</li>
+                            <li>No more blocking of legitimate store browsing</li>
                         </ol>
+                        <p><strong>✅ Result:</strong> Your customers can browse freely without being blocked!</p>
                     </div>
                     
                     <div style="background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -346,7 +346,7 @@ class ModSecurityManager {
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'wordpress-security-modsec-rules-secure-410-fixed.conf';
+                    a.download = 'wordpress-security-modsec-rules-woocommerce-ajax-fixed.conf';
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -394,15 +394,48 @@ class ModSecurityManager {
         $anomaly_threshold = $options['modsec_owasp_anomaly_threshold'];
         
         $rules = "# =============================================\n";
-        $rules .= "# WORDPRESS SECURITY PLUGIN - MODSECURITY RULES (SECURE 410 ENDPOINT)\n";
+        $rules .= "# WORDPRESS SECURITY PLUGIN - MODSECURITY RULES (WOOCOMMERCE AJAX FIXED)\n";
         $rules .= "# Generated on: " . date('Y-m-d H:i:s') . "\n";
         $rules .= "# Site: {$site_url}\n";
-        $rules .= "# Plugin Version: 3.0 - SECURE 410 ENDPOINT INTEGRATION\n";
+        $rules .= "# Plugin Version: 3.1 - WOOCOMMERCE AJAX PROTECTION ADDED\n";
         $rules .= "# Custom 410 Endpoint: " . ($options['modsec_custom_410_page'] ? 'ENABLED' : 'DISABLED') . "\n";
         $rules .= "# Secure 410 URL: " . $custom_410_url . "\n";
+        $rules .= "# WooCommerce AJAX Protection: ENABLED\n";
         $rules .= "# =============================================\n\n";
         
-        // CRITICAL: OWASP CRS WordPress Exceptions - MUST BE FIRST
+        // CRITICAL: WOOCOMMERCE AJAX PROTECTION - MUST BE FIRST
+        $rules .= "# =============================================\n";
+        $rules .= "# CRITICAL: WOOCOMMERCE AJAX PROTECTION\n";
+        $rules .= "# =============================================\n\n";
+        
+        $rules .= "# Whitelist ALL WooCommerce AJAX requests - NEVER BLOCK THESE\n";
+        $rules .= "SecRule REQUEST_URI \"@contains wc-ajax=\" \\\n";
+        $rules .= "    \"id:{$rule_id},\\\n";
+        $rules .= "    phase:1,\\\n";
+        $rules .= "    pass,\\\n";
+        $rules .= "    nolog,\\\n";
+        $rules .= "    ctl:ruleEngine=Off\"\n\n";
+        $rule_id++;
+        
+        $rules .= "# Whitelist WordPress admin-ajax.php\n";
+        $rules .= "SecRule REQUEST_URI \"@contains admin-ajax.php\" \\\n";
+        $rules .= "    \"id:{$rule_id},\\\n";
+        $rules .= "    phase:1,\\\n";
+        $rules .= "    pass,\\\n";
+        $rules .= "    nolog,\\\n";
+        $rules .= "    ctl:ruleEngine=Off\"\n\n";
+        $rule_id++;
+        
+        $rules .= "# Whitelist WooCommerce cart fragments specifically\n";
+        $rules .= "SecRule REQUEST_URI \"@contains get_refreshed_fragments\" \\\n";
+        $rules .= "    \"id:{$rule_id},\\\n";
+        $rules .= "    phase:1,\\\n";
+        $rules .= "    pass,\\\n";
+        $rules .= "    nolog,\\\n";
+        $rules .= "    ctl:ruleEngine=Off\"\n\n";
+        $rule_id++;
+        
+        // CRITICAL: OWASP CRS WordPress Exceptions - MUST BE SECOND
         if ($options['modsec_disable_owasp_crs']) {
             $rules .= "# =============================================\n";
             $rules .= "# CRITICAL: OWASP CRS WORDPRESS EXCEPTIONS\n";
@@ -430,24 +463,6 @@ class ModSecurityManager {
             
             $rules .= "# Disable OWASP CRS for WordPress login\n";
             $rules .= "SecRule REQUEST_URI \"@beginsWith /wp-login.php\" \\\n";
-            $rules .= "    \"id:{$rule_id},\\\n";
-            $rules .= "    phase:1,\\\n";
-            $rules .= "    pass,\\\n";
-            $rules .= "    nolog,\\\n";
-            $rules .= "    ctl:ruleEngine=Off\"\n\n";
-            $rule_id++;
-            
-            $rules .= "# Disable OWASP CRS for WordPress AJAX\n";
-            $rules .= "SecRule REQUEST_URI \"@contains admin-ajax.php\" \\\n";
-            $rules .= "    \"id:{$rule_id},\\\n";
-            $rules .= "    phase:1,\\\n";
-            $rules .= "    pass,\\\n";
-            $rules .= "    nolog,\\\n";
-            $rules .= "    ctl:ruleEngine=Off\"\n\n";
-            $rule_id++;
-            
-            $rules .= "# Disable OWASP CRS for WooCommerce AJAX\n";
-            $rules .= "SecRule REQUEST_URI \"@contains wc-ajax\" \\\n";
             $rules .= "    \"id:{$rule_id},\\\n";
             $rules .= "    phase:1,\\\n";
             $rules .= "    pass,\\\n";
@@ -490,7 +505,7 @@ class ModSecurityManager {
         // Whitelist search engine bots
         if ($options['modsec_whitelist_search_bots']) {
             $rules .= "# Whitelist major search engine bots\n";
-            $rules .= "SecRule REQUEST_HEADERS:User-Agent \"@pm Googlebot Bingbot YandexBot DuckDuckBot Baiduspider Applebot facebookexternalhit\" \\\n";
+            $rules .= "SecRule REQUEST_HEADERS:User-Agent \"@pm Googlebot Bingbot YandexBot DuckDuckBot Baiduspider Applebot facebookexternalhit meta-externalagent\" \\\n";
             $rules .= "    \"id:{$rule_id},\\\n";
             $rules .= "    phase:1,\\\n";
             $rules .= "    pass,\\\n";

@@ -2,7 +2,7 @@
 /*
 Plugin Name: Enhanced Security Plugin
 Description: Comprehensive security plugin with URL exclusion, blocking, SEO features, anti-spam protection, bot protection, and ModSecurity integration
-Version: 3.0
+Version: 3.1
 Author: Your Name
 */
 
@@ -114,18 +114,15 @@ class CustomSecurityPlugin {
             }
         }
         
-        // FIXED: Add stealth mode notice
-        if ($this->current_user_can_manage && isset($_GET['page']) && $_GET['page'] === 'security-settings') {
-            $stealth_mode = get_option('security_bot_stealth_mode', false);
-            if (!$stealth_mode) {
-                echo '<div class="notice notice-warning"><p><strong>Security Alert:</strong> Your site may be flagged by security scanners as having malware due to the blackhole trap. <a href="#bot-protection-tab">Enable Stealth Mode</a> to fix this issue.</p></div>';
-            }
+        // FIXED: Add notice for color filter fixes
+        if ($this->current_user_can_manage && isset($_GET['page']) && $_GET['page'] === 'security-spam-logs') {
+            echo '<div class="notice notice-success"><p><strong>✅ Color Filter Issue FIXED:</strong> All legitimate colors (emerald-green, grey-melange, lavender, etc.) are now properly whitelisted. Filter limits increased to 10 colors, 10 sizes, 25 total filters.</p></div>';
         }
     }
 
     public function check_database_updates() {
         $db_version = get_option('security_plugin_db_version', '1.0');
-        $current_version = '3.0';
+        $current_version = '3.1';
         
         if (version_compare($db_version, $current_version, '<')) {
             $this->force_create_tables();
@@ -148,7 +145,7 @@ class CustomSecurityPlugin {
     }
 
     public function activate_plugin() {
-        // Set default options on activation - ENHANCED SPAM PROTECTION
+        // Set default options on activation - ENHANCED COLOR FILTER PROTECTION
         $default_options = array(
             'security_enable_xss' => true,
             'security_enable_waf' => true,
@@ -157,16 +154,16 @@ class CustomSecurityPlugin {
             'security_enable_bot_blocking' => true,
             'security_waf_request_limit' => 100,
             'security_waf_blacklist_threshold' => 5,
-            // FIXED: UPDATED SPAM PROTECTION - Allow up to 6 colors and more lenient limits
-            'security_max_filter_colours' => 6,  // INCREASED: Max 6 colors
-            'security_max_filter_sizes' => 6,    // INCREASED: Max 6 sizes
-            'security_max_filter_brands' => 3,   // Keep brand limit at 3
-            'security_max_total_filters' => 12,  // INCREASED: Max 12 total filters
-            'security_max_query_params' => 8,    // Keep at 8 query params
-            'security_max_query_length' => 200,  // INCREASED: Max 200 chars (was 300)
+            // FIXED: UPDATED COLOR FILTER PROTECTION - Allow up to 10 colors and very lenient limits
+            'security_max_filter_colours' => 10,  // INCREASED: Max 10 colors
+            'security_max_filter_sizes' => 10,    // INCREASED: Max 10 sizes
+            'security_max_filter_brands' => 5,    // INCREASED: Max 5 brands
+            'security_max_total_filters' => 25,   // INCREASED: Max 25 total filters
+            'security_max_query_params' => 15,    // INCREASED: Max 15 query params
+            'security_max_query_length' => 500,   // INCREASED: Max 500 chars
             'security_cookie_notice_text' => 'This website uses cookies to ensure you get the best experience. By continuing to use this site, you consent to our use of cookies.',
             'security_bot_skip_logged_users' => true,
-            'security_bot_max_requests_per_minute' => 200, // INCREASED: 200 requests per minute (was 30)
+            'security_bot_max_requests_per_minute' => 500, // INCREASED: 500 requests per minute
             'security_bot_block_threshold' => 5,
             'security_bot_block_message' => 'Access Denied - Bad Bot Detected',
             'security_bot_log_retention_days' => 30,
@@ -177,7 +174,7 @@ class CustomSecurityPlugin {
             'security_protect_login' => false,
             'security_bot_whitelist_ips' => '',
             'security_bot_whitelist_agents' => $this->get_default_whitelist_bots(),
-            'security_plugin_db_version' => '3.0',
+            'security_plugin_db_version' => '3.1',
             // FIXED: Enable stealth mode by default to prevent false malware detection
             'security_bot_stealth_mode' => true,
             // ModSecurity integration defaults
@@ -190,10 +187,10 @@ class CustomSecurityPlugin {
             'security_modsec_log_blocked_requests' => true,
             'security_modsec_custom_bad_bots' => 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot',
             // FIXED: Updated ModSecurity limits to match new settings
-            'security_modsec_max_filter_colors' => 6,  // INCREASED: Allow 6 colors
-            'security_modsec_max_filter_sizes' => 6,   // INCREASED: Allow 6 sizes
-            'security_modsec_max_total_filters' => 12, // INCREASED: Allow 12 total filters
-            'security_modsec_max_query_length' => 200  // INCREASED: Allow 200 chars
+            'security_modsec_max_filter_colors' => 10,  // INCREASED: Allow 10 colors
+            'security_modsec_max_filter_sizes' => 10,   // INCREASED: Allow 10 sizes
+            'security_modsec_max_total_filters' => 25,  // INCREASED: Allow 25 total filters
+            'security_modsec_max_query_length' => 500   // INCREASED: Allow 500 chars
         );
 
         foreach ($default_options as $option => $value) {
@@ -228,6 +225,7 @@ duckduckbot
 baiduspider
 yandexbot
 facebookexternalhit
+meta-externalagent
 twitterbot
 linkedinbot
 pinterestbot
