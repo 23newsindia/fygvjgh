@@ -49,9 +49,15 @@ class BotBlackhole {
     private function init() {
         // Only add frontend hooks if not in admin and not logged in as admin
         if (!$this->is_admin && !$this->current_user_can_manage) {
-            // Create blackhole trap
-            add_action('wp_footer', array($this, 'add_blackhole_trap'));
-            add_action('login_footer', array($this, 'add_blackhole_trap'));
+            // Create blackhole trap - FIXED: Check stealth mode
+            if (!$this->get_option('security_bot_stealth_mode', false)) {
+                add_action('wp_footer', array($this, 'add_blackhole_trap'));
+                add_action('login_footer', array($this, 'add_blackhole_trap'));
+            } else {
+                // In stealth mode, use a more subtle approach
+                add_action('wp_footer', array($this, 'add_stealth_blackhole_trap'));
+                add_action('login_footer', array($this, 'add_stealth_blackhole_trap'));
+            }
             
             // Check for bot access - highest priority
             add_action('init', array($this, 'check_bot_access'), 2); // Priority 2 to run after init_protection
@@ -252,6 +258,32 @@ class BotBlackhole {
         $wpdb->query("UPDATE {$this->table_name} SET blocked_reason = block_reason WHERE blocked_reason IS NULL");
         $wpdb->query("UPDATE {$this->table_name} SET hits = 1 WHERE hits IS NULL OR hits = 0");
         $wpdb->query("UPDATE {$this->table_name} SET is_blocked = 1 WHERE is_blocked IS NULL");
+    }
+    
+    // FIXED: Add stealth mode blackhole trap
+    public function add_stealth_blackhole_trap() {
+        // Don't show trap to logged-in users or admins
+        if ($this->is_logged_in || $this->current_user_can_manage) {
+            return;
+        }
+        
+        $trap_url = home_url('/blackhole-trap/');
+        $nonce = wp_create_nonce('blackhole_trap');
+        
+        ?>
+        <!-- Stealth Bot Trap - Invisible to security scanners -->
+        <script type="text/javascript">
+        // Only bots that execute JavaScript and follow programmatic links will trigger this
+        if (typeof document !== 'undefined' && document.createElement) {
+            var botTrap = document.createElement('div');
+            botTrap.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;';
+            botTrap.innerHTML = '<a href="<?php echo esc_url($trap_url . '?_wpnonce=' . $nonce); ?>" style="display:none;" rel="nofollow"></a>';
+            if (document.body) {
+                document.body.appendChild(botTrap);
+            }
+        }
+        </script>
+        <?php
     }
     
     public function add_blackhole_trap() {

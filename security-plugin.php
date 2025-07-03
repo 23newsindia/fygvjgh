@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: Enhanced Security Plugin
-Description: Comprehensive security plugin with URL exclusion, blocking, SEO features, anti-spam protection, and bot protection
-Version: 2.6
+Description: Comprehensive security plugin with URL exclusion, blocking, SEO features, anti-spam protection, bot protection, and ModSecurity integration
+Version: 3.0
 Author: Your Name
 */
 
@@ -22,6 +22,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-bot-blackhole.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-bot-blocker.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-bot-dashboard.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-bot-settings.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-modsecurity-manager.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-settings.php';
 
 class CustomSecurityPlugin {
@@ -35,6 +36,7 @@ class CustomSecurityPlugin {
     private $bot_blocker;
     private $bot_dashboard;
     private $bot_settings;
+    private $modsecurity_manager;
     private $settings;
     
     // Remove static variables from constructor - they'll be set later
@@ -48,6 +50,9 @@ class CustomSecurityPlugin {
         // Hook into WordPress initialization - wait for WordPress to load
         add_action('init', array($this, 'init_user_checks'), 1);
         add_action('plugins_loaded', array($this, 'init_components'), 5);
+        
+        // CRITICAL: Initialize SEO Manager FIRST to catch spam URLs
+        add_action('plugins_loaded', array($this, 'init_seo_manager'), 1);
         
         // Add activation hook for database setup
         register_activation_hook(__FILE__, array($this, 'activate_plugin'));
@@ -72,6 +77,14 @@ class CustomSecurityPlugin {
         $this->is_admin = is_admin();
         $this->is_logged_in = is_user_logged_in();
         $this->current_user_can_manage = current_user_can('manage_options');
+    }
+
+    public function init_seo_manager() {
+        // CRITICAL: Initialize SEO Manager FIRST with highest priority
+        if (get_option('security_enable_seo_features', true)) {
+            $this->seo_manager = new SEOManager();
+            $this->seo_manager->init();
+        }
     }
 
     public function debug_notice() {
@@ -100,11 +113,19 @@ class CustomSecurityPlugin {
                 }
             }
         }
+        
+        // FIXED: Add stealth mode notice
+        if ($this->current_user_can_manage && isset($_GET['page']) && $_GET['page'] === 'security-settings') {
+            $stealth_mode = get_option('security_bot_stealth_mode', false);
+            if (!$stealth_mode) {
+                echo '<div class="notice notice-warning"><p><strong>Security Alert:</strong> Your site may be flagged by security scanners as having malware due to the blackhole trap. <a href="#bot-protection-tab">Enable Stealth Mode</a> to fix this issue.</p></div>';
+            }
+        }
     }
 
     public function check_database_updates() {
         $db_version = get_option('security_plugin_db_version', '1.0');
-        $current_version = '2.6';
+        $current_version = '3.0';
         
         if (version_compare($db_version, $current_version, '<')) {
             $this->force_create_tables();
@@ -127,7 +148,7 @@ class CustomSecurityPlugin {
     }
 
     public function activate_plugin() {
-        // Set default options on activation
+        // Set default options on activation - ENHANCED SPAM PROTECTION
         $default_options = array(
             'security_enable_xss' => true,
             'security_enable_waf' => true,
@@ -136,12 +157,13 @@ class CustomSecurityPlugin {
             'security_enable_bot_blocking' => true,
             'security_waf_request_limit' => 100,
             'security_waf_blacklist_threshold' => 5,
-            'security_max_filter_colours' => 3,
-            'security_max_filter_sizes' => 4,
-            'security_max_filter_brands' => 2,
-            'security_max_total_filters' => 8,
-            'security_max_query_params' => 10,
-            'security_max_query_length' => 500,
+            // AGGRESSIVE SPAM PROTECTION - Very strict limits
+            'security_max_filter_colours' => 2,  // Max 2 colors
+            'security_max_filter_sizes' => 3,    // Max 3 sizes
+            'security_max_filter_brands' => 1,   // Max 1 brand
+            'security_max_total_filters' => 5,   // Max 5 total filters
+            'security_max_query_params' => 8,    // Max 8 query params
+            'security_max_query_length' => 300,  // Max 300 chars
             'security_cookie_notice_text' => 'This website uses cookies to ensure you get the best experience. By continuing to use this site, you consent to our use of cookies.',
             'security_bot_skip_logged_users' => true,
             'security_bot_max_requests_per_minute' => 30,
@@ -155,7 +177,18 @@ class CustomSecurityPlugin {
             'security_protect_login' => false,
             'security_bot_whitelist_ips' => '',
             'security_bot_whitelist_agents' => $this->get_default_whitelist_bots(),
-            'security_plugin_db_version' => '2.6'
+            'security_plugin_db_version' => '3.0',
+            // FIXED: Enable stealth mode by default to prevent false malware detection
+            'security_bot_stealth_mode' => true,
+            // ModSecurity integration defaults
+            'security_enable_modsec_integration' => true,
+            'security_modsec_rule_id_start' => 20000,
+            'security_modsec_block_spam_urls' => true,
+            'security_modsec_block_bad_bots' => true,
+            'security_modsec_custom_410_page' => true,
+            'security_modsec_whitelist_search_bots' => true,
+            'security_modsec_log_blocked_requests' => true,
+            'security_modsec_custom_bad_bots' => 'BLEXBot,MJ12bot,SemrushBot,AhrefsBot'
         );
 
         foreach ($default_options as $option => $value) {
@@ -248,17 +281,14 @@ wordfence';
         $this->sanitization = new SecuritySanitization();
         $this->feature_manager = new FeatureManager();
         
-        // Load SEO manager if enabled
-        if (get_option('security_enable_seo_features', true)) {
-            $this->seo_manager = new SEOManager();
-            add_action('init', array($this->seo_manager, 'init'));
-        }
-        
         // Admin components
         if ($this->is_admin) {
             $this->settings = new SecuritySettings();
             add_action('admin_menu', array($this->settings, 'add_admin_menu'));
             add_action('admin_init', array($this->settings, 'register_settings'));
+            
+            // Initialize ModSecurity manager
+            $this->modsecurity_manager = new ModSecurityManager();
             
             // Initialize bot dashboard - use BotBlackhole as primary
             if (get_option('security_enable_bot_protection', true)) {

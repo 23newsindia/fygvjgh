@@ -8,14 +8,75 @@ class SecuritySettings {
     }
     
     public function add_admin_menu() {
+        // FIXED: Main menu should point to security-settings, not security-spam-logs
         add_menu_page(
             'Security Settings',
             'Security Settings',
             'manage_options',
-            'security-settings',
+            'security-settings', // FIXED: This was the issue
             array($this, 'render_settings_page'),
             'dashicons-shield'
         );
+        
+        // REMOVED: Duplicate submenu registration - let SEOManager handle it
+    }
+
+    public function render_spam_logs_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        // Handle clear logs action
+        if (isset($_POST['clear_logs']) && check_admin_referer('clear_spam_logs', 'spam_logs_nonce')) {
+            delete_option('security_spam_url_logs');
+            echo '<div class="notice notice-success"><p>Spam logs cleared successfully.</p></div>';
+        }
+
+        $spam_logs = get_option('security_spam_url_logs', array());
+        ?>
+        <div class="wrap">
+            <h1>Spam URL Logs</h1>
+            <p>This page shows URLs that have been blocked as spam due to excessive filter parameters.</p>
+            
+            <?php if (!empty($spam_logs)): ?>
+                <form method="post" style="margin-bottom: 20px;">
+                    <?php wp_nonce_field('clear_spam_logs', 'spam_logs_nonce'); ?>
+                    <input type="submit" name="clear_logs" class="button" value="Clear All Logs" 
+                           onclick="return confirm('Are you sure you want to clear all spam logs?')">
+                </form>
+                
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>URL</th>
+                            <th>Reason</th>
+                            <th>IP Address</th>
+                            <th>User Agent</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach (array_reverse($spam_logs) as $log): ?>
+                            <tr>
+                                <td><?php echo esc_html($log['timestamp']); ?></td>
+                                <td style="word-break: break-all; max-width: 300px;">
+                                    <?php echo esc_html($log['url']); ?>
+                                </td>
+                                <td><?php echo esc_html($log['reason']); ?></td>
+                                <td><?php echo esc_html($log['ip']); ?></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">
+                                    <?php echo esc_html(substr($log['user_agent'], 0, 100)); ?>
+                                    <?php if (strlen($log['user_agent']) > 100): ?>...<?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <p>No spam URLs have been logged yet.</p>
+            <?php endif; ?>
+        </div>
+        <?php
     }
 
     public function render_settings_page() {
@@ -54,13 +115,13 @@ class SecuritySettings {
             'allowed_image_domains' => get_option('security_allowed_image_domains', ''),
             'allowed_frame_domains' => get_option('security_allowed_frame_domains', ''),
             'enable_cookie_banner' => get_option('security_enable_cookie_banner', false),
-            // SEO and Anti-Spam options
-            'max_filter_colours' => get_option('security_max_filter_colours', 3),
-            'max_filter_sizes' => get_option('security_max_filter_sizes', 4),
-            'max_filter_brands' => get_option('security_max_filter_brands', 2),
-            'max_total_filters' => get_option('security_max_total_filters', 8),
-            'max_query_params' => get_option('security_max_query_params', 10),
-            'max_query_length' => get_option('security_max_query_length', 500),
+            // SEO and Anti-Spam options - UPDATED DEFAULTS
+            'max_filter_colours' => get_option('security_max_filter_colours', 2), // Reduced from 3 to 2
+            'max_filter_sizes' => get_option('security_max_filter_sizes', 3),     // Reduced from 4 to 3
+            'max_filter_brands' => get_option('security_max_filter_brands', 1),   // Reduced from 2 to 1
+            'max_total_filters' => get_option('security_max_total_filters', 5),   // Reduced from 8 to 5
+            'max_query_params' => get_option('security_max_query_params', 8),     // Reduced from 10 to 8
+            'max_query_length' => get_option('security_max_query_length', 300),   // Reduced from 500 to 300
             '410_page_content' => get_option('security_410_page_content', ''),
             'enable_seo_features' => get_option('security_enable_seo_features', true),
             // Bot protection options
@@ -79,7 +140,9 @@ class SecuritySettings {
             'bot_whitelist_ips' => get_option('security_bot_whitelist_ips', ''),
             'bot_whitelist_agents' => get_option('security_bot_whitelist_agents', $this->get_default_whitelist_bots()),
             // Bot blocking options
-            'enable_bot_blocking' => get_option('security_enable_bot_blocking', true)
+            'enable_bot_blocking' => get_option('security_enable_bot_blocking', true),
+            // FIXED: Add stealth mode option
+            'bot_stealth_mode' => get_option('security_bot_stealth_mode', true)
         );
         ?>
         <div class="wrap">
@@ -152,6 +215,24 @@ class SecuritySettings {
 
                 <div id="bot-protection-tab" class="tab-content" style="display:none;">
                     <table class="form-table">
+                        <!-- FIXED: Add stealth mode at the top -->
+                        <tr style="background: #fff3cd; border: 2px solid #ffeaa7;">
+                            <th style="color: #856404;"><strong>⚠️ Stealth Mode</strong></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="bot_stealth_mode" value="1" <?php checked($options['bot_stealth_mode']); ?>>
+                                    <strong>Enable Stealth Mode (Recommended)</strong>
+                                </label>
+                                <p class="description" style="color: #856404;"><strong>IMPORTANT:</strong> Stealth mode prevents security scanners from detecting the blackhole trap as malware. When disabled, your site may be flagged by Sucuri and other security scanners.</p>
+                                
+                                <?php if (!$options['bot_stealth_mode']): ?>
+                                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                                        <strong>🚨 WARNING:</strong> Stealth mode is currently DISABLED. This may cause your site to be flagged as having malware by security scanners like Sucuri.
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        
                         <tr>
                             <th>Enable Bot Protection</th>
                             <td>
@@ -301,6 +382,7 @@ class SecuritySettings {
                                     <li>Behavioral analysis and pattern recognition</li>
                                     <li>Automatic IP blocking with transient caching</li>
                                     <li>Real-time bot trap monitoring</li>
+                                    <li><strong>Stealth mode to avoid false malware detection</strong></li>
                                 </ul>
                                 <p class="description">The blackhole system creates invisible traps that legitimate users never see, but bots often follow, allowing for accurate bot detection.</p>
                             </td>
@@ -350,52 +432,57 @@ class SecuritySettings {
                         </tr>
 
                         <tr>
-                            <th>Filter Limits (Anti-Spam)</th>
+                            <th>Filter Limits (Anti-Spam) - ENHANCED</th>
                             <td>
+                                <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                                    <strong>⚠️ Enhanced Spam Protection Active</strong><br>
+                                    These limits have been reduced to better protect against spam URLs like the ones hitting your site.
+                                </div>
+                                
                                 <label>
                                     Max Colors in Filter:
                                     <input type="number" name="max_filter_colours" value="<?php echo esc_attr($options['max_filter_colours']); ?>" min="1" max="10">
                                 </label>
-                                <p class="description">Maximum number of colors allowed in filter_colour parameter</p>
+                                <p class="description">Maximum number of colors allowed in filter_colour parameter (Reduced to 2 for better spam protection)</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Sizes in Filter:
                                     <input type="number" name="max_filter_sizes" value="<?php echo esc_attr($options['max_filter_sizes']); ?>" min="1" max="10">
                                 </label>
-                                <p class="description">Maximum number of sizes allowed in filter_size parameter</p>
+                                <p class="description">Maximum number of sizes allowed in filter_size parameter (Reduced to 3 for better spam protection)</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Brands in Filter:
                                     <input type="number" name="max_filter_brands" value="<?php echo esc_attr($options['max_filter_brands']); ?>" min="1" max="10">
                                 </label>
-                                <p class="description">Maximum number of brands allowed in filter_brand parameter</p>
+                                <p class="description">Maximum number of brands allowed in filter_brand parameter (Reduced to 1 for better spam protection)</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Total Filters:
                                     <input type="number" name="max_total_filters" value="<?php echo esc_attr($options['max_total_filters']); ?>" min="1" max="20">
                                 </label>
-                                <p class="description">Maximum total number of filter values across all parameters</p>
+                                <p class="description">Maximum total number of filter values across all parameters (Reduced to 5 for better spam protection)</p>
                             </td>
                         </tr>
 
                         <tr>
-                            <th>Query String Limits</th>
+                            <th>Query String Limits - ENHANCED</th>
                             <td>
                                 <label>
                                     Max Query Parameters:
                                     <input type="number" name="max_query_params" value="<?php echo esc_attr($options['max_query_params']); ?>" min="5" max="50">
                                 </label>
-                                <p class="description">Maximum number of query parameters allowed</p>
+                                <p class="description">Maximum number of query parameters allowed (Reduced to 8 for better spam protection)</p>
                                 
                                 <br><br>
                                 <label>
                                     Max Query String Length:
                                     <input type="number" name="max_query_length" value="<?php echo esc_attr($options['max_query_length']); ?>" min="100" max="2000">
                                 </label>
-                                <p class="description">Maximum length of query string in characters</p>
+                                <p class="description">Maximum length of query string in characters (Reduced to 300 for better spam protection)</p>
                             </td>
                         </tr>
 
@@ -423,6 +510,31 @@ class SecuritySettings {
                             <td>
                                 <textarea name="excluded_paths" rows="5" cols="50" class="large-text"><?php echo esc_textarea($options['excluded_paths']); ?></textarea>
                                 <p class="description">Enter one path per line (e.g., /register/?action=check_email). These paths will keep their query strings.</p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <th>Spam URL Examples</th>
+                            <td>
+                                <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px;">
+                                    <strong>🚫 These types of URLs will now return 410 (Gone):</strong><br>
+                                    <code style="font-size: 11px; display: block; margin: 5px 0;">
+                                        /product-category/men/?filter_colour=maroon,peace-orange,black,bottle-green,white,mint-green,yellow,red,lemon-yellow,beige,baby-pink,orange,lavender,royal-blue,sky-blue,military-green,emerald-green,wine
+                                    </code>
+                                    <code style="font-size: 11px; display: block; margin: 5px 0;">
+                                        /product-category/women/?filter_size=medium,xl,too-large,large&filter_colour=mustard-yellow,black,chocolate-brown,red,bottle-green,white,royal-blue,baby-pink,magenta,maroon,peace-orange,lemon-yellow,wine
+                                    </code>
+                                </div>
+                                
+                                <div style="background: #d1edff; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                                    <strong>✅ These URLs will work normally:</strong><br>
+                                    <code style="font-size: 11px; display: block; margin: 5px 0;">
+                                        /product-category/men/?filter_colour=aqua-blue&query_type_colour=or
+                                    </code>
+                                    <code style="font-size: 11px; display: block; margin: 5px 0;">
+                                        /product-category/women/?filter_colour=black,red&filter_size=medium,large
+                                    </code>
+                                </div>
                             </td>
                         </tr>
                     </table>
@@ -629,7 +741,7 @@ wordfence';
         update_option('security_allowed_frame_domains', sanitize_textarea_field($_POST['allowed_frame_domains']));
         update_option('security_enable_cookie_banner', isset($_POST['enable_cookie_banner']));
         
-        // SEO and Anti-Spam settings
+        // SEO and Anti-Spam settings - UPDATED DEFAULTS
         update_option('security_enable_seo_features', isset($_POST['enable_seo_features']));
         update_option('security_max_filter_colours', intval($_POST['max_filter_colours']));
         update_option('security_max_filter_sizes', intval($_POST['max_filter_sizes']));
@@ -657,6 +769,9 @@ wordfence';
         
         // Bot blocking settings (Pattern-based system)
         update_option('security_enable_bot_blocking', isset($_POST['enable_bot_blocking']));
+        
+        // FIXED: Save stealth mode setting
+        update_option('security_bot_stealth_mode', isset($_POST['bot_stealth_mode']));
     }
 
     public function register_settings() {
@@ -681,7 +796,9 @@ wordfence';
             'security_bot_custom_message', 'security_bot_email_alerts', 'security_bot_alert_email',
             'security_bot_whitelist_ips', 'security_bot_whitelist_agents', 'security_bot_log_retention_days',
             // Bot blocking settings (Pattern-based)
-            'security_enable_bot_blocking'
+            'security_enable_bot_blocking',
+            // FIXED: Add stealth mode to registered settings
+            'security_bot_stealth_mode'
         );
 
         foreach ($settings as $setting) {
