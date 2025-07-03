@@ -39,6 +39,370 @@ class SEOManager {
         
         // Add spam logs submenu properly
         add_action('admin_menu', array($this, 'add_spam_logs_menu'), 20);
+        
+        // FIXED: Add rewrite rules for secure 410 page
+        add_action('init', array($this, 'add_410_rewrite_rules'));
+        add_filter('query_vars', array($this, 'add_410_query_vars'));
+        add_action('template_redirect', array($this, 'handle_410_endpoint'));
+        
+        // Add caching headers
+        add_action('wp_headers', array($this, 'add_410_cache_headers'));
+    }
+
+    // FIXED: Add secure 410 endpoint without exposing plugin directory
+    public function add_410_rewrite_rules() {
+        // Add rewrite rule for secure 410 page
+        add_rewrite_rule(
+            '^security-410/?$',
+            'index.php?security_410=1',
+            'top'
+        );
+        
+        // Flush rewrite rules if needed
+        if (!get_option('security_410_rules_flushed')) {
+            flush_rewrite_rules();
+            update_option('security_410_rules_flushed', true);
+        }
+    }
+    
+    public function add_410_query_vars($vars) {
+        $vars[] = 'security_410';
+        return $vars;
+    }
+    
+    public function handle_410_endpoint() {
+        if (get_query_var('security_410')) {
+            $this->serve_cached_410_page();
+        }
+    }
+    
+    public function add_410_cache_headers($headers) {
+        if (get_query_var('security_410')) {
+            // Add aggressive caching for 410 pages
+            $headers['Cache-Control'] = 'public, max-age=86400, s-maxage=86400'; // 24 hours
+            $headers['Expires'] = gmdate('D, d M Y H:i:s', time() + 86400) . ' GMT';
+            $headers['Pragma'] = 'cache';
+            $headers['Vary'] = 'Accept-Encoding';
+        }
+        return $headers;
+    }
+    
+    private function serve_cached_410_page() {
+        // Check cache first
+        $cache_key = 'security_410_page_cache';
+        $cached_content = get_transient($cache_key);
+        
+        if ($cached_content !== false) {
+            // Serve from cache
+            $this->send_410_headers();
+            echo $cached_content;
+            exit;
+        }
+        
+        // Generate and cache the 410 page
+        $content = $this->generate_410_page_content();
+        
+        // Cache for 24 hours
+        set_transient($cache_key, $content, 24 * HOUR_IN_SECONDS);
+        
+        // Serve the content
+        $this->send_410_headers();
+        echo $content;
+        exit;
+    }
+    
+    private function send_410_headers() {
+        if (!headers_sent()) {
+            status_header(410);
+            nocache_headers();
+            header('HTTP/1.1 410 Gone');
+            header('Status: 410 Gone');
+            header('Content-Type: text/html; charset=utf-8');
+            header('X-Robots-Tag: noindex, nofollow');
+            header('X-Content-Security: blocked');
+            
+            // Add caching headers for performance
+            header('Cache-Control: public, max-age=86400, s-maxage=86400');
+            header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 86400) . ' GMT');
+            header('Pragma: cache');
+            header('Vary: Accept-Encoding');
+        }
+    }
+    
+    private function generate_410_page_content() {
+        $site_name = get_bloginfo('name') ?: 'Wild Dragon';
+        $home_url = home_url() ?: 'https://wilddragon.in';
+        $site_description = get_bloginfo('description');
+        $custom_410_content = $this->get_option('security_410_page_content', '');
+        
+        if (!empty($custom_410_content)) {
+            return $custom_410_content;
+        }
+        
+        // Enhanced default 410 page with Wild Dragon branding
+        ob_start();
+        ?>
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <title>410 - Content Permanently Removed | <?php echo esc_html($site_name); ?></title>
+            <meta name="robots" content="noindex, nofollow">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta name="description" content="The requested content has been permanently removed from <?php echo esc_attr($site_name); ?>">
+            <link rel="canonical" href="<?php echo esc_url($home_url); ?>">
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+                    text-align: center; 
+                    padding: 20px; 
+                    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+                    color: #333;
+                    margin: 0;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    line-height: 1.6;
+                }
+                
+                .error-container { 
+                    max-width: 700px; 
+                    margin: 0 auto; 
+                    background: white; 
+                    padding: 50px 40px; 
+                    border-radius: 16px; 
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+                    position: relative;
+                    overflow: hidden;
+                }
+                
+                .error-container::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    height: 4px;
+                    background: linear-gradient(90deg, #e74c3c, #f39c12, #e74c3c);
+                }
+                
+                .logo-area {
+                    margin-bottom: 30px;
+                }
+                
+                .site-logo {
+                    font-size: 2em;
+                    font-weight: 900;
+                    color: #1a1a2e;
+                    margin-bottom: 10px;
+                    text-transform: uppercase;
+                    letter-spacing: 2px;
+                }
+                
+                .status-code {
+                    font-size: 8em;
+                    font-weight: 900;
+                    color: #e74c3c;
+                    margin: 0 0 20px 0;
+                    line-height: 1;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+                }
+                
+                h1 { 
+                    color: #2c3e50; 
+                    font-size: 2.5em;
+                    margin: 0 0 30px 0;
+                    font-weight: 600;
+                }
+                
+                .subtitle {
+                    font-size: 1.2em;
+                    color: #7f8c8d;
+                    margin-bottom: 40px;
+                    font-weight: 300;
+                }
+                
+                p { 
+                    color: #555; 
+                    line-height: 1.8; 
+                    font-size: 1.1em;
+                    margin: 20px 0;
+                }
+                
+                .back-link { 
+                    display: inline-block;
+                    color: white;
+                    background: linear-gradient(135deg, #1a1a2e, #16213e);
+                    text-decoration: none; 
+                    padding: 15px 30px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    font-size: 1.1em;
+                    transition: all 0.3s ease;
+                    margin: 30px 10px 10px 10px;
+                    box-shadow: 0 4px 15px rgba(26, 26, 46, 0.3);
+                }
+                
+                .back-link:hover { 
+                    background: linear-gradient(135deg, #16213e, #0f3460);
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(26, 26, 46, 0.4);
+                }
+                
+                .explanation {
+                    background: #f8f9fa;
+                    padding: 30px;
+                    border-radius: 12px;
+                    margin: 30px 0;
+                    border-left: 5px solid #e74c3c;
+                    text-align: left;
+                }
+                
+                .explanation h3 {
+                    margin: 0 0 15px 0;
+                    color: #e74c3c;
+                    font-size: 1.3em;
+                }
+                
+                .security-notice {
+                    background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+                    border: 1px solid #f39c12;
+                    padding: 25px;
+                    border-radius: 12px;
+                    margin: 30px 0;
+                    border-left: 5px solid #f39c12;
+                    text-align: left;
+                }
+                
+                .security-notice h3 {
+                    color: #d68910;
+                    margin: 0 0 15px 0;
+                    font-size: 1.2em;
+                }
+                
+                .actions-list {
+                    text-align: left;
+                    display: inline-block;
+                    margin: 20px 0;
+                }
+                
+                .actions-list li {
+                    margin: 10px 0;
+                    padding: 5px 0;
+                    font-size: 1.1em;
+                }
+                
+                .site-info {
+                    margin-top: 40px;
+                    padding-top: 30px;
+                    border-top: 1px solid #ecf0f1;
+                    color: #7f8c8d;
+                    font-size: 0.9em;
+                }
+                
+                .cache-info {
+                    position: absolute;
+                    bottom: 10px;
+                    right: 15px;
+                    font-size: 0.7em;
+                    color: #bdc3c7;
+                    opacity: 0.7;
+                }
+                
+                @media (max-width: 768px) {
+                    .error-container {
+                        padding: 30px 20px;
+                        margin: 20px;
+                    }
+                    
+                    .status-code {
+                        font-size: 5em;
+                    }
+                    
+                    h1 {
+                        font-size: 2em;
+                    }
+                    
+                    .back-link {
+                        display: block;
+                        margin: 20px 0;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <div class="logo-area">
+                    <div class="site-logo"><?php echo esc_html($site_name); ?></div>
+                </div>
+                
+                <div class="status-code">410</div>
+                <h1>Content Permanently Removed</h1>
+                <p class="subtitle">The content you are looking for is no longer available</p>
+                
+                <div class="explanation">
+                    <h3>🔍 What does this mean?</h3>
+                    <p>A 410 status indicates that the content has been intentionally removed and will not be available again. This helps search engines understand that this content should be removed from their index.</p>
+                </div>
+                
+                <div class="security-notice">
+                    <h3>🛡️ Security Protection Active</h3>
+                    <p>This request was blocked by our security system because it contained excessive filter parameters. Our system protects against:</p>
+                    <ul style="margin: 10px 0 0 20px;">
+                        <li>Spam filter URLs with too many color/size combinations</li>
+                        <li>Automated scraping attempts</li>
+                        <li>Malicious bot requests</li>
+                        <li>Invalid or suspicious URL patterns</li>
+                    </ul>
+                    <p style="margin-top: 15px;"><strong>Blocked URL pattern:</strong> Too many filter parameters detected</p>
+                </div>
+                
+                <p><strong>What you can do:</strong></p>
+                <ul class="actions-list">
+                    <li>🏠 Return to our homepage</li>
+                    <li>👕 Browse our men's collection</li>
+                    <li>👗 Browse our women's collection</li>
+                    <li>🔍 Use our search function</li>
+                    <li>📧 Contact us if you believe this is an error</li>
+                </ul>
+                
+                <a href="<?php echo esc_url($home_url); ?>" class="back-link">← Return to <?php echo esc_html($site_name); ?> Homepage</a>
+                
+                <div class="site-info">
+                    <strong><?php echo esc_html($site_name); ?></strong><br>
+                    Premium Fashion & Lifestyle Brand
+                </div>
+                
+                <div class="cache-info">
+                    Cached: <?php echo date('Y-m-d H:i:s'); ?>
+                </div>
+            </div>
+            
+            <!-- Structured Data for SEO -->
+            <script type="application/ld+json">
+            {
+                "@context": "https://schema.org",
+                "@type": "WebPage",
+                "name": "410 - Content Permanently Removed",
+                "description": "The requested content has been permanently removed",
+                "url": "<?php echo esc_url($_SERVER['REQUEST_URI'] ?? ''); ?>",
+                "isPartOf": {
+                    "@type": "WebSite",
+                    "name": "<?php echo esc_js($site_name); ?>",
+                    "url": "<?php echo esc_url($home_url); ?>"
+                }
+            }
+            </script>
+        </body>
+        </html>
+        <?php
+        return ob_get_clean();
     }
 
     public function handle_spam_urls() {
@@ -451,133 +815,15 @@ class SEOManager {
     }
 
     private function send_410_response($message = 'Gone') {
-        // Clear any output buffers
-        if (ob_get_level()) {
-            ob_end_clean();
-        }
+        // FIXED: Redirect to secure cached 410 endpoint instead of direct response
+        $secure_410_url = home_url('/security-410/');
         
-        status_header(410);
-        nocache_headers();
-        header('HTTP/1.1 410 Gone');
-        header('Status: 410 Gone');
-        header('Content-Type: text/html; charset=utf-8');
+        // Log the blocked request
+        $this->log_spam_attempt($_SERVER['REQUEST_URI'], $message);
         
-        // Add SEO-friendly headers
-        header('Cache-Control: no-cache, no-store, must-revalidate');
-        header('Pragma: no-cache');
-        header('Expires: 0');
-        
-        // Custom 410 page content
-        $custom_410_content = $this->get_option('security_410_page_content', '');
-        
-        if (!empty($custom_410_content)) {
-            echo $custom_410_content;
-        } else {
-            echo $this->get_default_410_page($message);
-        }
-        
+        // Redirect to secure 410 page
+        wp_redirect($secure_410_url, 301);
         exit;
-    }
-
-    private function get_default_410_page($message = 'Gone') {
-        $site_name = get_bloginfo('name');
-        $home_url = home_url();
-        
-        return '<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>410 - Content Permanently Removed | ' . esc_html($site_name) . '</title>
-    <meta name="robots" content="noindex, nofollow">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            text-align: center; 
-            padding: 50px 20px; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .error-container { 
-            max-width: 600px; 
-            margin: 0 auto; 
-            background: white; 
-            padding: 40px; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        h1 { 
-            color: #e74c3c; 
-            font-size: 3em;
-            margin: 0 0 20px 0;
-            font-weight: 300;
-        }
-        .status-code {
-            font-size: 6em;
-            font-weight: bold;
-            color: #e74c3c;
-            margin: 0;
-            line-height: 1;
-        }
-        p { 
-            color: #666; 
-            line-height: 1.6; 
-            font-size: 1.1em;
-            margin: 20px 0;
-        }
-        .back-link { 
-            display: inline-block;
-            color: white;
-            background: #3498db;
-            text-decoration: none; 
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-weight: 500;
-            transition: background 0.3s ease;
-            margin-top: 20px;
-        }
-        .back-link:hover { 
-            background: #2980b9;
-        }
-        .explanation {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #e74c3c;
-        }
-        .explanation h3 {
-            margin: 0 0 10px 0;
-            color: #e74c3c;
-        }
-    </style>
-</head>
-<body>
-    <div class="error-container">
-        <div class="status-code">410</div>
-        <h1>Content Permanently Removed</h1>
-        <p>The content you are looking for has been permanently removed and is no longer available.</p>
-        
-        <div class="explanation">
-            <h3>What does this mean?</h3>
-            <p>A 410 status indicates that the content has been intentionally removed and will not be available again. This helps search engines understand that this content should be removed from their index.</p>
-        </div>
-        
-        <p>You can:</p>
-        <ul style="text-align: left; display: inline-block;">
-            <li>Return to our homepage</li>
-            <li>Use our search function to find similar content</li>
-            <li>Browse our categories</li>
-        </ul>
-        
-        <a href="' . esc_url($home_url) . '" class="back-link">← Return to Homepage</a>
-    </div>
-</body>
-</html>';
     }
 
     public function clean_url_for_seo($url) {
@@ -656,8 +902,15 @@ class SEOManager {
     public function clear_spam_logs() {
         if (current_user_can('manage_options')) {
             delete_option('security_spam_url_logs');
+            // Clear 410 page cache when logs are cleared
+            delete_transient('security_410_page_cache');
             return true;
         }
         return false;
+    }
+    
+    // FIXED: Add method to clear 410 page cache
+    public function clear_410_cache() {
+        delete_transient('security_410_page_cache');
     }
 }

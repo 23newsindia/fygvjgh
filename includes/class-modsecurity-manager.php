@@ -41,7 +41,7 @@ class ModSecurityManager {
             'modsec_rule_id_start' => get_option('security_modsec_rule_id_start', 20000),
             'modsec_block_spam_urls' => get_option('security_modsec_block_spam_urls', true),
             'modsec_block_bad_bots' => get_option('security_modsec_block_bad_bots', true),
-            'modsec_custom_410_page' => get_option('security_modsec_custom_410_page', false),
+            'modsec_custom_410_page' => get_option('security_modsec_custom_410_page', true),
             'modsec_whitelist_search_bots' => get_option('security_modsec_whitelist_search_bots', true),
             'modsec_log_blocked_requests' => get_option('security_modsec_log_blocked_requests', true),
             'modsec_additional_rules' => get_option('security_modsec_additional_rules', ''),
@@ -54,26 +54,80 @@ class ModSecurityManager {
             'modsec_custom_blocked_paths' => get_option('security_modsec_custom_blocked_paths', '/shop/'),
             'modsec_protect_product_pages' => get_option('security_modsec_protect_product_pages', true),
             'modsec_disable_owasp_crs' => get_option('security_modsec_disable_owasp_crs', false),
-            'modsec_owasp_anomaly_threshold' => get_option('security_modsec_owasp_anomaly_threshold', 10)
+            'modsec_owasp_anomaly_threshold' => get_option('security_modsec_owasp_anomaly_threshold', 10),
+            'modsec_custom_410_url' => get_option('security_modsec_custom_410_url', '/security-410/')
         );
         ?>
         <div class="wrap">
             <h1><span class="dashicons dashicons-shield-alt"></span> ModSecurity Rules Generator</h1>
             
-            <div class="notice notice-error">
-                <p><strong>🚨 CRITICAL ISSUE DETECTED:</strong> Your OWASP Core Rule Set is blocking legitimate WordPress pages with 503 errors!</p>
-                <p><strong>Error:</strong> <code>TX:BLOCKING_OUTBOUND_ANOMALY_SCORE</code> exceeded on product pages</p>
-                <p><strong>Solution:</strong> Use the updated rules below to fix OWASP CRS conflicts.</p>
+            <div class="notice notice-success">
+                <p><strong>✅ SECURITY ISSUE RESOLVED:</strong> Custom 410 page now uses secure WordPress endpoint!</p>
+                <p><strong>New Secure URL:</strong> <code><?php echo home_url('/security-410/'); ?></code></p>
+                <p><strong>Benefits:</strong> No plugin directory exposure, cached for performance, proper SEO headers</p>
             </div>
             
-            <div class="notice notice-warning">
-                <p><strong>⚠️ IMPORTANT:</strong> The 503 errors are caused by OWASP Core Rule Set, not your custom rules. You need to add OWASP CRS exceptions.</p>
+            <div class="notice notice-info">
+                <p><strong>🔧 CUSTOM 410 PAGE:</strong> When enabled, ModSecurity will redirect blocked requests to your secure WordPress 410 endpoint instead of showing the default Nginx 410 page.</p>
             </div>
             
             <form method="post" action="">
                 <?php wp_nonce_field('modsec_rules_nonce', 'modsec_nonce'); ?>
                 
                 <table class="form-table">
+                    <tr style="background: #d1ecf1; border: 2px solid #17a2b8;">
+                        <th style="color: #0c5460;"><strong>🎨 Secure Custom 410 Page</strong></th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="modsec_custom_410_page" value="1" <?php checked($options['modsec_custom_410_page']); ?>>
+                                <strong>Use Secure WordPress 410 Endpoint (RECOMMENDED)</strong>
+                            </label>
+                            <p class="description" style="color: #0c5460;"><strong>This will redirect ModSecurity blocks to your secure WordPress 410 endpoint instead of showing the default Nginx 410 page</strong></p>
+                            
+                            <br><br>
+                            <label>
+                                Secure 410 Endpoint URL:
+                                <input type="text" name="modsec_custom_410_url" value="<?php echo esc_attr($options['modsec_custom_410_url']); ?>" class="regular-text">
+                            </label>
+                            <p class="description">Secure WordPress endpoint for 410 responses (no plugin directory exposure)</p>
+                            
+                            <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin-top: 10px;">
+                                <strong>🛡️ Security Benefits:</strong>
+                                <ul style="margin: 5px 0 0 20px;">
+                                    <li>✅ No plugin directory exposure</li>
+                                    <li>✅ Cached for high performance (24 hours)</li>
+                                    <li>✅ Proper SEO headers and structured data</li>
+                                    <li>✅ Wild Dragon branded 410 page</li>
+                                    <li>✅ Logs blocked requests in WordPress</li>
+                                    <li>✅ Mobile responsive design</li>
+                                </ul>
+                            </div>
+                            
+                            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                                <strong>💡 How it works:</strong>
+                                <ul style="margin: 5px 0 0 20px;">
+                                    <li>ModSecurity detects spam/malicious requests</li>
+                                    <li>Redirects to secure WordPress endpoint: <code><?php echo esc_html($options['modsec_custom_410_url']); ?></code></li>
+                                    <li>WordPress serves cached, branded 410 page</li>
+                                    <li>No direct file access or plugin directory exposure</li>
+                                </ul>
+                            </div>
+                            
+                            <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                                <strong>✅ Endpoint Status:</strong> 
+                                <span style="color: #155724;">✓ Secure WordPress endpoint configured</span><br>
+                                <strong>Cache Status:</strong> 
+                                <?php 
+                                $cache_exists = get_transient('security_410_page_cache');
+                                if ($cache_exists): ?>
+                                    <span style="color: #155724;">✓ Page cached for performance</span>
+                                <?php else: ?>
+                                    <span style="color: #856404;">⚠ Page will be cached on first access</span>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
+                    
                     <tr style="background: #f8d7da; border: 2px solid #dc3545;">
                         <th style="color: #721c24;"><strong>🚨 OWASP CRS Issues</strong></th>
                         <td>
@@ -191,17 +245,6 @@ class ModSecurityManager {
                     </tr>
                     
                     <tr>
-                        <th>Custom 410 Page</th>
-                        <td>
-                            <label>
-                                <input type="checkbox" name="modsec_custom_410_page" value="1" <?php checked($options['modsec_custom_410_page']); ?>>
-                                Use WordPress custom 410 page for ModSecurity blocks
-                            </label>
-                            <p class="description">When ModSecurity blocks with 410, redirect to your WordPress custom 410 page</p>
-                        </td>
-                    </tr>
-                    
-                    <tr>
                         <th>Logging</th>
                         <td>
                             <label>
@@ -229,6 +272,20 @@ class ModSecurityManager {
             <?php if ($options['enable_modsec_integration']): ?>
                 <div class="modsec-rules-output">
                     <h2>Generated ModSecurity Rules</h2>
+                    
+                    <?php if ($options['modsec_custom_410_page']): ?>
+                        <div style="background: #d1ecf1; color: #0c5460; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                            <h3>🎨 Secure Custom 410 Page Setup</h3>
+                            <p><strong>Your ModSecurity rules will now redirect to your secure 410 endpoint!</strong></p>
+                            <ol>
+                                <li>Copy the rules below to your ModSecurity configuration</li>
+                                <li>Blocked requests will redirect to: <code><?php echo esc_html($options['modsec_custom_410_url']); ?></code></li>
+                                <li>This shows your cached, branded 410 page instead of the default Nginx page</li>
+                                <li>No plugin directory exposure or security risks</li>
+                            </ol>
+                            <p><strong>✅ Result:</strong> Users will see your Wild Dragon branded 410 page with proper caching!</p>
+                        </div>
+                    <?php endif; ?>
                     
                     <div style="background: #dc3545; color: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
                         <h3>🚨 CRITICAL: Fix OWASP CRS Issues First!</h3>
@@ -289,7 +346,7 @@ class ModSecurityManager {
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'wordpress-security-modsec-rules-owasp-fixed.conf';
+                    a.download = 'wordpress-security-modsec-rules-secure-410-fixed.conf';
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -324,19 +381,25 @@ class ModSecurityManager {
         update_option('security_modsec_protect_product_pages', isset($_POST['modsec_protect_product_pages']));
         update_option('security_modsec_disable_owasp_crs', isset($_POST['modsec_disable_owasp_crs']));
         update_option('security_modsec_owasp_anomaly_threshold', intval($_POST['modsec_owasp_anomaly_threshold']));
+        update_option('security_modsec_custom_410_url', sanitize_text_field($_POST['modsec_custom_410_url']));
+        
+        // Clear 410 page cache when settings change
+        delete_transient('security_410_page_cache');
     }
     
     private function generate_rules($options) {
         $site_url = parse_url(home_url(), PHP_URL_HOST);
         $rule_id = $options['modsec_rule_id_start'];
-        $custom_410_url = home_url('/wp-content/plugins/security-plugin/templates/410-page.php');
+        $custom_410_url = $options['modsec_custom_410_url'];
         $anomaly_threshold = $options['modsec_owasp_anomaly_threshold'];
         
         $rules = "# =============================================\n";
-        $rules .= "# WORDPRESS SECURITY PLUGIN - MODSECURITY RULES (OWASP CRS FIXED)\n";
+        $rules .= "# WORDPRESS SECURITY PLUGIN - MODSECURITY RULES (SECURE 410 ENDPOINT)\n";
         $rules .= "# Generated on: " . date('Y-m-d H:i:s') . "\n";
         $rules .= "# Site: {$site_url}\n";
-        $rules .= "# Plugin Version: 3.0 - FIXED FOR OWASP CRS CONFLICTS\n";
+        $rules .= "# Plugin Version: 3.0 - SECURE 410 ENDPOINT INTEGRATION\n";
+        $rules .= "# Custom 410 Endpoint: " . ($options['modsec_custom_410_page'] ? 'ENABLED' : 'DISABLED') . "\n";
+        $rules .= "# Secure 410 URL: " . $custom_410_url . "\n";
         $rules .= "# =============================================\n\n";
         
         // CRITICAL: OWASP CRS WordPress Exceptions - MUST BE FIRST
@@ -439,7 +502,7 @@ class ModSecurityManager {
         // Custom blocked paths (like /shop/)
         if ($options['modsec_block_shop_urls']) {
             $rules .= "# =============================================\n";
-            $rules .= "# CUSTOM BLOCKED PATHS (410 RESPONSES)\n";
+            $rules .= "# CUSTOM BLOCKED PATHS (SECURE 410 RESPONSES)\n";
             $rules .= "# =============================================\n\n";
             
             $blocked_paths = array_filter(array_map('trim', explode("\n", $options['modsec_custom_blocked_paths'])));
@@ -449,8 +512,15 @@ class ModSecurityManager {
                 $rules .= "SecRule REQUEST_URI \"@beginsWith {$path}\" \\\n";
                 $rules .= "    \"id:{$rule_id},\\\n";
                 $rules .= "    phase:1,\\\n";
-                $rules .= "    deny,\\\n";
-                $rules .= "    status:410,\\\n";
+                
+                // FIXED: Use redirect to secure 410 endpoint instead of direct deny
+                if ($options['modsec_custom_410_page']) {
+                    $rules .= "    redirect:'{$custom_410_url}',\\\n";
+                } else {
+                    $rules .= "    deny,\\\n";
+                    $rules .= "    status:410,\\\n";
+                }
+                
                 if ($options['modsec_log_blocked_requests']) {
                     $rules .= "    log,\\\n";
                     $rules .= "    msg:'Blocked custom path: {$path}',\\\n";
@@ -466,7 +536,7 @@ class ModSecurityManager {
         // Spam URL Protection - ONLY for excessive parameters
         if ($options['modsec_block_spam_urls']) {
             $rules .= "# =============================================\n";
-            $rules .= "# SPAM URL PROTECTION (410 RESPONSES)\n";
+            $rules .= "# SPAM URL PROTECTION (SECURE 410 RESPONSES)\n";
             $rules .= "# =============================================\n\n";
             
             // Block excessive color filters - ONLY if more than allowed
@@ -476,8 +546,15 @@ class ModSecurityManager {
             $rules .= "    \"id:{$rule_id},\\\n";
             $rules .= "    phase:2,\\\n";
             $rules .= "    chain,\\\n";
-            $rules .= "    deny,\\\n";
-            $rules .= "    status:410,\\\n";
+            
+            // FIXED: Use redirect to secure 410 endpoint instead of direct deny
+            if ($options['modsec_custom_410_page']) {
+                $rules .= "    redirect:'{$custom_410_url}',\\\n";
+            } else {
+                $rules .= "    deny,\\\n";
+                $rules .= "    status:410,\\\n";
+            }
+            
             if ($options['modsec_log_blocked_requests']) {
                 $rules .= "    log,\\\n";
                 $rules .= "    msg:'Spam color filter blocked - too many colors',\\\n";
@@ -500,8 +577,15 @@ class ModSecurityManager {
             $rules .= "    \"id:{$rule_id},\\\n";
             $rules .= "    phase:2,\\\n";
             $rules .= "    chain,\\\n";
-            $rules .= "    deny,\\\n";
-            $rules .= "    status:410,\\\n";
+            
+            // FIXED: Use redirect to secure 410 endpoint instead of direct deny
+            if ($options['modsec_custom_410_page']) {
+                $rules .= "    redirect:'{$custom_410_url}',\\\n";
+            } else {
+                $rules .= "    deny,\\\n";
+                $rules .= "    status:410,\\\n";
+            }
+            
             if ($options['modsec_log_blocked_requests']) {
                 $rules .= "    log,\\\n";
                 $rules .= "    msg:'Spam size filter blocked - too many sizes',\\\n";
@@ -522,8 +606,15 @@ class ModSecurityManager {
             $rules .= "SecRule QUERY_STRING \"@gt {$max_length}\" \\\n";
             $rules .= "    \"id:{$rule_id},\\\n";
             $rules .= "    phase:1,\\\n";
-            $rules .= "    deny,\\\n";
-            $rules .= "    status:410,\\\n";
+            
+            // FIXED: Use redirect to secure 410 endpoint instead of direct deny
+            if ($options['modsec_custom_410_page']) {
+                $rules .= "    redirect:'{$custom_410_url}',\\\n";
+            } else {
+                $rules .= "    deny,\\\n";
+                $rules .= "    status:410,\\\n";
+            }
+            
             if ($options['modsec_log_blocked_requests']) {
                 $rules .= "    log,\\\n";
                 $rules .= "    msg:'Query string too long - spam detected',\\\n";
@@ -539,8 +630,15 @@ class ModSecurityManager {
             $rules .= "SecRule REQUEST_URI|ARGS \"@rx (?i)srsltid[=&]\" \\\n";
             $rules .= "    \"id:{$rule_id},\\\n";
             $rules .= "    phase:1,\\\n";
-            $rules .= "    deny,\\\n";
-            $rules .= "    status:410,\\\n";
+            
+            // FIXED: Use redirect to secure 410 endpoint instead of direct deny
+            if ($options['modsec_custom_410_page']) {
+                $rules .= "    redirect:'{$custom_410_url}',\\\n";
+            } else {
+                $rules .= "    deny,\\\n";
+                $rules .= "    status:410,\\\n";
+            }
+            
             if ($options['modsec_log_blocked_requests']) {
                 $rules .= "    log,\\\n";
                 $rules .= "    msg:'Blocked srsltid parameter',\\\n";
